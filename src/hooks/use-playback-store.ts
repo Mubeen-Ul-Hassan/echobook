@@ -14,6 +14,14 @@ interface PlaybackState {
   duration: number;    // total book duration in seconds
   speed: number;
 
+  // Error state
+  playbackError: string | null;
+  setPlaybackError: (error: string | null) => void;
+
+  // Player screen visibility (for mini-player show/hide logic)
+  isPlayerVisible: boolean;
+  setIsPlayerVisible: (visible: boolean) => void;
+
   // Sleep Timer
   sleepTimerDuration: number | null;
   sleepTimerRemaining: number | null;
@@ -55,6 +63,11 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   position: 0,
   duration: 0,
   speed: 1.0,
+  playbackError: null,
+  isPlayerVisible: false,
+
+  setPlaybackError: (error) => set({ playbackError: error }),
+  setIsPlayerVisible: (visible) => set({ isPlayerVisible: visible }),
 
   sleepTimerDuration: null,
   sleepTimerRemaining: null,
@@ -148,6 +161,7 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       position: 0,
       duration: 0,
       speed: 1.0,
+      playbackError: null,
       sleepTimerDuration: null,
       sleepTimerRemaining: null,
       sleepTimerType: null,

@@ -6,6 +6,8 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  ActivityIndicator,
+  AccessibilityInfo,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -23,11 +25,16 @@ import {
   Music,
   X,
   Check,
+  AlertCircle,
 } from 'lucide-react-native';
 import Animated, {
+  Easing,
   FadeIn,
   FadeInDown,
   FadeOut,
+  SlideInDown,
+  SlideOutDown,
+  ZoomIn,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -61,7 +68,7 @@ const SLEEP_OPTIONS: { label: string; value: number | 'chapter' }[] = [
 ];
 
 // ---------------------------------------------------------------------------
-// Helper formatters
+// Helpers
 // ---------------------------------------------------------------------------
 
 function formatTime(seconds: number): string {
@@ -86,7 +93,45 @@ function formatDuration(seconds: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Seek Bar component
+// AnimatedPressable – play button with spring press feedback
+// ---------------------------------------------------------------------------
+
+interface AnimatedPressableProps {
+  onPress: () => void;
+  style?: object;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
+  children: React.ReactNode;
+}
+
+function AnimatedPressable({
+  onPress,
+  style,
+  accessibilityLabel,
+  accessibilityHint,
+  children,
+}: AnimatedPressableProps) {
+  const scale = useSharedValue(1);
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Pressable
+      onPressIn={() => { scale.value = withSpring(0.88, { damping: 10, stiffness: 200 }); }}
+      onPressOut={() => { scale.value = withSpring(1, { damping: 10, stiffness: 200 }); }}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
+    >
+      <Animated.View style={[style, animStyle]}>{children}</Animated.View>
+    </Pressable>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Smooth Seek Bar using Reanimated interpolation
 // ---------------------------------------------------------------------------
 
 interface SeekBarProps {
@@ -108,83 +153,101 @@ function SeekBar({
   accentColor,
   trackColor,
 }: SeekBarProps) {
-  const [isSeeking, setIsSeeking] = useState(false);
-  const [seekValue, setSeekValue] = useState(0);
-  const barRef = useRef<View>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const barXRef = useRef<number>(0);
 
-  const progress = duration > 0 ? Math.min(1, Math.max(0, position / duration)) : 0;
-  const displayProgress = isSeeking ? seekValue : progress;
+  // Reanimated shared value for smooth interpolation between 250ms updates
+  const progressSV = useSharedValue(duration > 0 ? position / duration : 0);
 
-  const chapterStartRatio = duration > 0 ? chapterStart / duration : 0;
-  const chapterEndRatio = duration > 0 ? chapterEnd / duration : 1;
+  useEffect(() => {
+    if (!isDragging && duration > 0) {
+      progressSV.value = withTiming(Math.min(1, Math.max(0, position / duration)), {
+        duration: 240,
+        easing: Easing.linear,
+      });
+    }
+  }, [position, duration, isDragging, progressSV]);
+
+  const fillStyle = useAnimatedStyle(() => ({
+    width: progressSV.value * SEEK_BAR_WIDTH,
+  }));
+
+  const thumbStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progressSV.value * SEEK_BAR_WIDTH - 8 }],
+  }));
+
+  const chapterStartPx = duration > 0 ? (chapterStart / duration) * SEEK_BAR_WIDTH : 0;
+  const chapterWidthPx =
+    duration > 0
+      ? ((chapterEnd - chapterStart) / duration) * SEEK_BAR_WIDTH
+      : SEEK_BAR_WIDTH;
 
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
-        setIsSeeking(true);
+        setIsDragging(true);
         const ratio = Math.min(1, Math.max(0, (evt.nativeEvent.pageX - barXRef.current) / SEEK_BAR_WIDTH));
-        setSeekValue(ratio);
+        progressSV.value = ratio;
       },
       onPanResponderMove: (evt) => {
         const ratio = Math.min(1, Math.max(0, (evt.nativeEvent.pageX - barXRef.current) / SEEK_BAR_WIDTH));
-        setSeekValue(ratio);
+        progressSV.value = ratio;
       },
       onPanResponderRelease: (evt) => {
         const ratio = Math.min(1, Math.max(0, (evt.nativeEvent.pageX - barXRef.current) / SEEK_BAR_WIDTH));
-        setIsSeeking(false);
+        setIsDragging(false);
         onSeek(ratio * duration);
       },
       onPanResponderTerminate: () => {
-        setIsSeeking(false);
+        setIsDragging(false);
       },
     }),
   ).current;
 
   return (
     <View
-      ref={barRef}
-      style={[styles.seekBarHitArea]}
+      style={styles.seekBarHitArea}
       onLayout={(e) => {
-        barRef.current?.measure((_x, _y, _w, _h, pageX) => {
+        const el = e.target as unknown as { measure: Function };
+        el.measure((_x: number, _y: number, _w: number, _h: number, pageX: number) => {
           barXRef.current = pageX;
         });
-        e.nativeEvent.layout; // touch onLayout to avoid eslint warning
       }}
+      accessibilityRole="adjustable"
+      accessibilityLabel={`Progress: ${formatTime(position)} of ${formatTime(duration)}`}
+      accessibilityValue={{ min: 0, max: duration, now: Math.floor(position) }}
+      accessibilityActions={[
+        { name: 'increment', label: 'Skip forward 30 seconds' },
+        { name: 'decrement', label: 'Skip back 30 seconds' },
+      ]}
       {...panResponder.panHandlers}
     >
-      {/* Full track background */}
+      {/* Track background */}
       <View style={[styles.seekTrack, { backgroundColor: trackColor }]}>
         {/* Chapter range highlight */}
         <View
           style={[
             styles.seekChapterRange,
-            {
-              left: `${chapterStartRatio * 100}%`,
-              width: `${(chapterEndRatio - chapterStartRatio) * 100}%`,
-              backgroundColor: `${trackColor}AA`,
-            },
+            { left: chapterStartPx, width: chapterWidthPx, backgroundColor: accentColor + '28' },
           ]}
         />
-        {/* Progress fill */}
-        <View
-          style={[
-            styles.seekFill,
-            { backgroundColor: accentColor, width: `${displayProgress * 100}%` },
-          ]}
-        />
+        {/* Progress fill – driven by Reanimated shared value */}
+        <Animated.View style={[styles.seekFill, { backgroundColor: accentColor }, fillStyle]} />
       </View>
-      {/* Thumb */}
-      <View
+      {/* Thumb dot */}
+      <Animated.View
         style={[
           styles.seekThumb,
           {
             backgroundColor: accentColor,
-            left: `${displayProgress * 100}%`,
-            transform: [{ translateX: -8 }, { scale: isSeeking ? 1.4 : 1 }],
+            shadowColor: accentColor,
+            shadowOpacity: 0.5,
+            shadowRadius: 4,
+            elevation: 3,
           },
+          thumbStyle,
         ]}
       />
     </View>
@@ -197,25 +260,23 @@ function SeekBar({
 
 function AutoplayCountdown({ onSkip, onCancel }: { onSkip: () => void; onCancel: () => void }) {
   const theme = useTheme();
-  const { autoplayCountdownRemaining, tickAutoplayCountdown, cancelAutoplayCountdown } =
-    usePlaybackStore((s) => ({
-      autoplayCountdownRemaining: s.autoplayCountdownRemaining,
-      tickAutoplayCountdown: s.tickAutoplayCountdown,
-      cancelAutoplayCountdown: s.cancelAutoplayCountdown,
-    }));
+  const autoplayCountdownRemaining = usePlaybackStore((s) => s.autoplayCountdownRemaining);
+  const tickAutoplayCountdown = usePlaybackStore((s) => s.tickAutoplayCountdown);
+  const cancelAutoplayCountdown = usePlaybackStore((s) => s.cancelAutoplayCountdown);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      tickAutoplayCountdown();
-    }, 1000);
+    const id = setInterval(() => tickAutoplayCountdown(), 1000);
     return () => clearInterval(id);
   }, [tickAutoplayCountdown]);
 
   useEffect(() => {
-    if (autoplayCountdownRemaining === 0) {
-      onSkip();
-    }
+    if (autoplayCountdownRemaining === 0) onSkip();
   }, [autoplayCountdownRemaining, onSkip]);
+
+  // Announce chapter transition to screen readers
+  useEffect(() => {
+    AccessibilityInfo.announceForAccessibility('Next chapter starting in 5 seconds');
+  }, []);
 
   return (
     <Animated.View
@@ -223,15 +284,26 @@ function AutoplayCountdown({ onSkip, onCancel }: { onSkip: () => void; onCancel:
       exiting={FadeOut.duration(200)}
       style={[styles.countdownOverlay, { backgroundColor: theme.background + 'EE' }]}
     >
-      <View style={[styles.countdownCard, { backgroundColor: theme.backgroundElement }]}>
+      <Animated.View
+        entering={ZoomIn.springify().damping(14)}
+        style={[styles.countdownCard, { backgroundColor: theme.backgroundElement }]}
+      >
         <ThemedText themeColor="textSecondary" style={styles.countdownLabel}>
-          Next Chapter
+          NEXT CHAPTER
         </ThemedText>
-        <ThemedText style={styles.countdownNumber}>{autoplayCountdownRemaining}</ThemedText>
+        <ThemedText
+          style={styles.countdownNumber}
+          accessibilityLabel={`${autoplayCountdownRemaining} seconds until next chapter`}
+          accessibilityLiveRegion="polite"
+        >
+          {autoplayCountdownRemaining}
+        </ThemedText>
         <View style={styles.countdownButtons}>
           <Pressable
             onPress={() => { cancelAutoplayCountdown(); onCancel(); }}
             style={[styles.countdownBtn, { backgroundColor: theme.backgroundSelected }]}
+            accessibilityRole="button"
+            accessibilityLabel="Cancel autoplay"
           >
             <X size={16} color={theme.text} />
             <ThemedText style={styles.countdownBtnText}>Cancel</ThemedText>
@@ -239,12 +311,14 @@ function AutoplayCountdown({ onSkip, onCancel }: { onSkip: () => void; onCancel:
           <Pressable
             onPress={onSkip}
             style={[styles.countdownBtn, { backgroundColor: theme.accent }]}
+            accessibilityRole="button"
+            accessibilityLabel="Skip to next chapter now"
           >
             <SkipForward size={16} color="#000" />
             <ThemedText style={[styles.countdownBtnText, { color: '#000' }]}>Skip Now</ThemedText>
           </Pressable>
         </View>
-      </View>
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -284,6 +358,9 @@ export default function PlayerScreen() {
   const sleepTimerType = usePlaybackStore((s) => s.sleepTimerType);
   const startSleepTimer = usePlaybackStore((s) => s.startSleepTimer);
   const clearSleepTimer = usePlaybackStore((s) => s.clearSleepTimer);
+  const playbackError = usePlaybackStore((s) => s.playbackError);
+  const setPlaybackError = usePlaybackStore((s) => s.setPlaybackError);
+  const setIsPlayerVisible = usePlaybackStore((s) => s.setIsPlayerVisible);
 
   const [showSpeedSheet, setShowSpeedSheet] = useState(false);
   const [showSleepSheet, setShowSleepSheet] = useState(false);
@@ -291,30 +368,44 @@ export default function PlayerScreen() {
   const [bookmarkNote, setBookmarkNote] = useState('');
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
 
-  // Cover scale animation
+  // Notify store that player screen is open (hides mini-player)
+  useEffect(() => {
+    setIsPlayerVisible(true);
+    return () => setIsPlayerVisible(false);
+  }, [setIsPlayerVisible]);
+
+  // Cover scale animation tied to play state
   const coverScale = useSharedValue(isPlaying ? 1 : 0.9);
   useEffect(() => {
-    coverScale.value = withSpring(isPlaying ? 1 : 0.9, { damping: 12 });
+    coverScale.value = withSpring(isPlaying ? 1 : 0.9, { damping: 12, stiffness: 100 });
   }, [isPlaying, coverScale]);
   const coverStyle = useAnimatedStyle(() => ({
     transform: [{ scale: coverScale.value }],
   }));
 
-  // Start audio on mount if currentBook is set but player isn't playing
+  // Start audio on mount if not already playing the correct book
   useEffect(() => {
     if (!currentBook || !chapters.length) return;
     if (!player.isLoaded || !player.playing) {
       startBook(currentBook, chapters, position, true).catch(console.warn);
     }
-  }, []); // Only on mount
+  }, []); // Intentionally run only on mount
 
-  // Load bookmarks for bookmark sheet
+  // Load bookmarks whenever the sheet opens
   useEffect(() => {
     if (!currentBook) return;
-    dbService.getBookmarksByBookId(db, currentBook.id)
+    dbService
+      .getBookmarksByBookId(db, currentBook.id)
       .then(setBookmarks)
       .catch(console.warn);
   }, [db, currentBook, showBookmarkSheet]);
+
+  // Announce current chapter to screen readers when it changes
+  useEffect(() => {
+    if (currentChapter) {
+      AccessibilityInfo.announceForAccessibility(`Now playing: ${currentChapter.title}`);
+    }
+  }, [currentChapter?.id]);
 
   // ---------------------------------------------------------------------------
   // Computed values
@@ -324,19 +415,14 @@ export default function PlayerScreen() {
   const chapterEnd = currentChapter?.endTime ?? (currentBook?.duration ?? 0);
   const bookDuration = currentBook?.duration ?? 0;
   const remaining = Math.max(0, bookDuration - position);
+  const currentChapterIndex = chapters.findIndex((ch) => ch.id === currentChapter?.id);
+  const hasNextChapter = currentChapterIndex < chapters.length - 1;
+  const hasPrevChapter = currentChapterIndex > 0;
 
   const chapterProgress =
     chapterEnd > chapterStart
       ? Math.min(1, Math.max(0, (position - chapterStart) / (chapterEnd - chapterStart)))
       : 0;
-
-  const currentChapterIndex = chapters.findIndex((ch) => ch.id === currentChapter?.id);
-  const hasNextChapter = currentChapterIndex < chapters.length - 1;
-  const hasPrevChapter = currentChapterIndex > 0;
-
-  // ---------------------------------------------------------------------------
-  // Sleep timer helpers
-  // ---------------------------------------------------------------------------
 
   const sleepTimerLabel = (() => {
     if (!sleepTimerType) return null;
@@ -346,7 +432,7 @@ export default function PlayerScreen() {
   })();
 
   // ---------------------------------------------------------------------------
-  // Autoplay countdown handlers
+  // Event handlers
   // ---------------------------------------------------------------------------
 
   const handleAutoplaySkip = useCallback(async () => {
@@ -357,10 +443,6 @@ export default function PlayerScreen() {
   const handleAutoplayCancel = useCallback(() => {
     cancelAutoplayCountdown();
   }, [cancelAutoplayCountdown]);
-
-  // ---------------------------------------------------------------------------
-  // Bookmark add
-  // ---------------------------------------------------------------------------
 
   const handleAddBookmark = useCallback(async () => {
     if (!currentBook) return;
@@ -376,16 +458,26 @@ export default function PlayerScreen() {
       });
       setBookmarkNote('');
       setShowBookmarkSheet(false);
-      // Refresh bookmarks
       const updated = await dbService.getBookmarksByBookId(db, currentBook.id);
       setBookmarks(updated);
+      AccessibilityInfo.announceForAccessibility('Bookmark saved');
     } catch (err) {
       console.warn('[Player] Failed to add bookmark:', err);
     }
   }, [db, currentBook, currentChapter, player, bookmarkNote]);
 
+  const closeAllSheets = useCallback(() => {
+    setShowSpeedSheet(false);
+    setShowSleepSheet(false);
+    setShowBookmarkSheet(false);
+  }, []);
+
+  const handleDismissError = useCallback(() => {
+    setPlaybackError(null);
+  }, [setPlaybackError]);
+
   // ---------------------------------------------------------------------------
-  // Render nothing if no book loaded
+  // No book state
   // ---------------------------------------------------------------------------
 
   if (!currentBook) {
@@ -396,7 +488,12 @@ export default function PlayerScreen() {
           <ThemedText themeColor="textSecondary" style={styles.noBookText}>
             No audiobook selected.
           </ThemedText>
-          <Pressable onPress={() => router.back()} style={[styles.backBtn, { backgroundColor: theme.backgroundElement }]}>
+          <Pressable
+            onPress={() => router.back()}
+            style={[styles.backBtn, { backgroundColor: theme.backgroundElement }]}
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
             <ThemedText>Go Back</ThemedText>
           </Pressable>
         </View>
@@ -415,7 +512,7 @@ export default function PlayerScreen() {
         showsVerticalScrollIndicator={false}
         bounces={false}
       >
-        {/* Header */}
+        {/* ── Header ── */}
         <Animated.View entering={FadeInDown.duration(300)} style={styles.header}>
           <Pressable
             onPress={() => router.back()}
@@ -424,51 +521,89 @@ export default function PlayerScreen() {
               styles.headerBtn,
               { backgroundColor: pressed ? theme.backgroundElement : 'transparent' },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel="Minimise player"
           >
             <ChevronDown size={28} color={theme.text} />
           </Pressable>
 
           <View style={styles.headerCenter}>
             <ThemedText type="small" themeColor="textSecondary" style={styles.headerLabel}>
-              Now Playing
+              NOW PLAYING
             </ThemedText>
           </View>
 
-          {/* Sleep timer badge */}
-          {sleepTimerLabel && (
+          {sleepTimerLabel ? (
             <Pressable
               onPress={() => setShowSleepSheet(true)}
               style={[styles.sleepBadge, { backgroundColor: theme.backgroundElement }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Sleep timer: ${sleepTimerLabel}. Tap to modify.`}
             >
               <Timer size={12} color={theme.accent} />
               <ThemedText style={[styles.sleepBadgeText, { color: theme.accent }]}>
                 {sleepTimerLabel}
               </ThemedText>
             </Pressable>
+          ) : (
+            <View style={styles.headerBtn} />
           )}
-          {!sleepTimerLabel && <View style={styles.headerBtn} />}
         </Animated.View>
 
-        {/* Cover Art */}
-        <Animated.View entering={FadeIn.duration(400)} style={styles.coverWrapper}>
+        {/* ── Error banner ── */}
+        {playbackError && (
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(200)}
+            style={[styles.errorBanner, { backgroundColor: '#5C1A1A' }]}
+          >
+            <AlertCircle size={16} color="#FF6B6B" />
+            <ThemedText style={styles.errorText} numberOfLines={2}>
+              {playbackError}
+            </ThemedText>
+            <Pressable
+              onPress={handleDismissError}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss error"
+            >
+              <X size={16} color="#FF6B6B" />
+            </Pressable>
+          </Animated.View>
+        )}
+
+        {/* ── Cover Art (ZoomIn entrance animation) ── */}
+        <Animated.View entering={ZoomIn.duration(450).springify().damping(16)} style={styles.coverWrapper}>
           <Animated.View style={[styles.coverContainer, coverStyle]}>
             {currentBook.coverPath ? (
               <Image
                 source={{ uri: currentBook.coverPath }}
                 style={styles.coverImage}
                 contentFit="cover"
+                accessibilityLabel={`Cover art for ${currentBook.title}`}
               />
             ) : (
               <View style={[styles.coverPlaceholder, { backgroundColor: theme.backgroundElement }]}>
                 <Music size={72} color={theme.textSecondary} />
               </View>
             )}
+
+            {/* Loading spinner overlay */}
+            {!isLoaded && (
+              <View style={styles.loadingOverlay}>
+                <ActivityIndicator size="large" color={theme.accent} />
+              </View>
+            )}
           </Animated.View>
         </Animated.View>
 
-        {/* Book & Chapter Info */}
+        {/* ── Book & Chapter Info ── */}
         <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.infoSection}>
-          <ThemedText numberOfLines={2} style={styles.chapterTitle}>
+          <ThemedText
+            numberOfLines={2}
+            style={styles.chapterTitle}
+            accessibilityRole="header"
+          >
             {currentChapter?.title ?? currentBook.title}
           </ThemedText>
           <ThemedText numberOfLines={1} themeColor="textSecondary" style={styles.bookTitle}>
@@ -476,17 +611,18 @@ export default function PlayerScreen() {
             {currentBook.author ? ` · ${currentBook.author}` : ''}
           </ThemedText>
 
-          {/* Add bookmark shortcut */}
           <Pressable
             onPress={() => setShowBookmarkSheet(true)}
             hitSlop={8}
             style={styles.bookmarkQuickBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Add bookmark at current position"
           >
             <Bookmark size={20} color={theme.textSecondary} />
           </Pressable>
         </Animated.View>
 
-        {/* Seek Bar */}
+        {/* ── Seek Bar ── */}
         <Animated.View entering={FadeInDown.delay(150).duration(300)} style={styles.seekSection}>
           <SeekBar
             position={position}
@@ -498,20 +634,27 @@ export default function PlayerScreen() {
             trackColor={theme.backgroundElement}
           />
 
-          {/* Time labels */}
           <View style={styles.timeRow}>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText
+              type="small"
+              themeColor="textSecondary"
+              accessibilityLabel={`Elapsed: ${formatTime(position)}`}
+            >
               {formatTime(position)}
             </ThemedText>
             <ThemedText type="small" themeColor="textSecondary" style={styles.chapterProgressLabel}>
-              Chapter {currentChapterIndex + 1}/{chapters.length}
+              {currentChapterIndex + 1}/{chapters.length}
             </ThemedText>
-            <ThemedText type="small" themeColor="textSecondary">
+            <ThemedText
+              type="small"
+              themeColor="textSecondary"
+              accessibilityLabel={`Remaining: ${formatTime(remaining)}`}
+            >
               {formatRemaining(remaining)}
             </ThemedText>
           </View>
 
-          {/* Chapter seek bar */}
+          {/* Chapter progress strip */}
           <View style={[styles.chapterSeekBg, { backgroundColor: theme.backgroundElement }]}>
             <View
               style={[
@@ -525,7 +668,7 @@ export default function PlayerScreen() {
           </ThemedText>
         </Animated.View>
 
-        {/* Playback Controls */}
+        {/* ── Playback Controls ── */}
         <Animated.View entering={FadeInDown.delay(200).duration(300)} style={styles.controls}>
           {/* Previous chapter */}
           <Pressable
@@ -534,42 +677,52 @@ export default function PlayerScreen() {
             hitSlop={12}
             style={({ pressed }) => [
               styles.controlBtn,
-              { opacity: pressed || !hasPrevChapter ? 0.4 : 1 },
+              { opacity: pressed || !hasPrevChapter ? 0.35 : 1 },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel="Previous chapter"
+            accessibilityState={{ disabled: !hasPrevChapter }}
           >
             <SkipBack size={28} color={theme.text} fill={hasPrevChapter ? theme.text : 'none'} />
           </Pressable>
 
-          {/* Skip back 30s */}
+          {/* Skip back 30 s */}
           <Pressable
             onPress={() => skipBackward(30)}
             hitSlop={12}
             style={({ pressed }) => [styles.controlBtn, { opacity: pressed ? 0.6 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Skip back 30 seconds"
           >
             <RotateCcw size={26} color={theme.text} />
             <ThemedText style={styles.skipLabel}>30</ThemedText>
           </Pressable>
 
-          {/* Play / Pause */}
-          <Pressable
+          {/* Play / Pause – animated ripple */}
+          <AnimatedPressable
             onPress={togglePlayPause}
-            style={({ pressed }) => [
-              styles.playBtn,
-              { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
-            ]}
+            style={[styles.playBtn, { backgroundColor: theme.accent }]}
+            accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+            accessibilityHint={
+              isPlaying
+                ? 'Double tap to pause playback'
+                : 'Double tap to resume playback'
+            }
           >
             {isPlaying ? (
               <Pause size={32} color="#000" fill="#000" />
             ) : (
               <Play size={32} color="#000" fill="#000" style={{ marginLeft: 3 }} />
             )}
-          </Pressable>
+          </AnimatedPressable>
 
-          {/* Skip forward 30s */}
+          {/* Skip forward 30 s */}
           <Pressable
             onPress={() => skipForward(30)}
             hitSlop={12}
             style={({ pressed }) => [styles.controlBtn, { opacity: pressed ? 0.6 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Skip forward 30 seconds"
           >
             <RotateCw size={26} color={theme.text} />
             <ThemedText style={styles.skipLabel}>30</ThemedText>
@@ -582,41 +735,51 @@ export default function PlayerScreen() {
             hitSlop={12}
             style={({ pressed }) => [
               styles.controlBtn,
-              { opacity: pressed || !hasNextChapter ? 0.4 : 1 },
+              { opacity: pressed || !hasNextChapter ? 0.35 : 1 },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel="Next chapter"
+            accessibilityState={{ disabled: !hasNextChapter }}
           >
             <SkipForward size={28} color={theme.text} fill={hasNextChapter ? theme.text : 'none'} />
           </Pressable>
         </Animated.View>
 
-        {/* Bottom row: Speed | Chapters | Sleep Timer */}
+        {/* ── Bottom toolbar: Speed | Bookmark | Sleep Timer ── */}
         <Animated.View entering={FadeInDown.delay(250).duration(300)} style={styles.bottomRow}>
-          {/* Speed */}
           <Pressable
             onPress={() => setShowSpeedSheet(true)}
             style={[styles.bottomChip, { backgroundColor: theme.backgroundElement }]}
+            accessibilityRole="button"
+            accessibilityLabel={`Playback speed: ${speed === 1.0 ? '1×' : `${speed}×`}. Tap to change.`}
           >
             <ThemedText style={[styles.bottomChipText, { color: theme.accent }]}>
               {speed === 1.0 ? '1×' : `${speed}×`}
             </ThemedText>
           </Pressable>
 
-          {/* Bookmark */}
           <Pressable
             onPress={() => setShowBookmarkSheet(true)}
             style={[styles.bottomChip, { backgroundColor: theme.backgroundElement }]}
+            accessibilityRole="button"
+            accessibilityLabel="Add bookmark"
           >
             <Bookmark size={16} color={theme.text} />
             <ThemedText style={styles.bottomChipText}>Mark</ThemedText>
           </Pressable>
 
-          {/* Sleep Timer */}
           <Pressable
             onPress={() => setShowSleepSheet(true)}
             style={[
               styles.bottomChip,
               { backgroundColor: sleepTimerType ? theme.accent : theme.backgroundElement },
             ]}
+            accessibilityRole="button"
+            accessibilityLabel={
+              sleepTimerLabel
+                ? `Sleep timer active: ${sleepTimerLabel}. Tap to change.`
+                : 'Set sleep timer'
+            }
           >
             <Timer size={16} color={sleepTimerType ? '#000' : theme.text} />
             <ThemedText style={[styles.bottomChipText, sleepTimerType ? { color: '#000' } : {}]}>
@@ -626,18 +789,19 @@ export default function PlayerScreen() {
         </Animated.View>
       </ScrollView>
 
-      {/* ─── Autoplay Countdown overlay ─── */}
+      {/* ── Autoplay Countdown overlay ── */}
       {isAutoplayCountdown && (
         <AutoplayCountdown onSkip={handleAutoplaySkip} onCancel={handleAutoplayCancel} />
       )}
 
-      {/* ─── Speed Sheet ─── */}
+      {/* ── Speed Sheet ── */}
       {showSpeedSheet && (
         <Animated.View
-          entering={FadeIn.duration(200)}
+          entering={SlideInDown.springify().damping(18).stiffness(150)}
+          exiting={SlideOutDown.duration(220)}
           style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement }]}
         >
-          <View style={styles.sheetHandle} />
+          <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
           <ThemedText style={styles.sheetTitle}>Playback Speed</ThemedText>
           <View style={styles.speedGrid}>
             {SPEED_OPTIONS.map((s) => (
@@ -646,11 +810,11 @@ export default function PlayerScreen() {
                 onPress={() => { setSpeed(s); setShowSpeedSheet(false); }}
                 style={[
                   styles.speedOption,
-                  {
-                    backgroundColor:
-                      speed === s ? theme.accent : theme.backgroundSelected,
-                  },
+                  { backgroundColor: speed === s ? theme.accent : theme.backgroundSelected },
                 ]}
+                accessibilityRole="button"
+                accessibilityLabel={`${s === 1.0 ? '1×' : `${s}×`} speed`}
+                accessibilityState={{ selected: speed === s }}
               >
                 <ThemedText
                   style={[styles.speedOptionText, speed === s ? { color: '#000' } : {}]}
@@ -663,76 +827,88 @@ export default function PlayerScreen() {
           <Pressable
             onPress={() => setShowSpeedSheet(false)}
             style={[styles.sheetCloseBtn, { backgroundColor: theme.backgroundSelected }]}
+            accessibilityRole="button"
+            accessibilityLabel="Close speed sheet"
           >
             <ThemedText themeColor="textSecondary">Close</ThemedText>
           </Pressable>
         </Animated.View>
       )}
 
-      {/* ─── Sleep Timer Sheet ─── */}
+      {/* ── Sleep Timer Sheet ── */}
       {showSleepSheet && (
         <Animated.View
-          entering={FadeIn.duration(200)}
+          entering={SlideInDown.springify().damping(18).stiffness(150)}
+          exiting={SlideOutDown.duration(220)}
           style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement }]}
         >
-          <View style={styles.sheetHandle} />
+          <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
           <ThemedText style={styles.sheetTitle}>Sleep Timer</ThemedText>
           {sleepTimerType && (
             <Pressable
               onPress={() => { clearSleepTimer(); setShowSleepSheet(false); }}
               style={[styles.clearTimerBtn, { backgroundColor: theme.backgroundSelected }]}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel sleep timer"
             >
               <X size={16} color={theme.text} />
               <ThemedText style={styles.clearTimerText}>Cancel timer</ThemedText>
             </Pressable>
           )}
           <View style={styles.sleepGrid}>
-            {SLEEP_OPTIONS.map((opt) => (
-              <Pressable
-                key={String(opt.value)}
-                onPress={() => {
-                  if (typeof opt.value === 'number') {
-                    startSleepTimer(opt.value, 'time');
-                  } else {
-                    startSleepTimer(0, 'chapter');
-                  }
-                  setShowSleepSheet(false);
-                }}
-                style={[
-                  styles.sleepOption,
-                  {
-                    backgroundColor:
-                      (sleepTimerType === 'time' &&
-                        typeof opt.value === 'number' &&
-                        opt.value === usePlaybackStore.getState().sleepTimerDuration)
-                        ? theme.accent
-                        : (sleepTimerType === 'chapter' && opt.value === 'chapter')
-                        ? theme.accent
-                        : theme.backgroundSelected,
-                    flex: opt.value === 'chapter' ? 1 : undefined,
-                  },
-                ]}
-              >
-                <ThemedText style={styles.sleepOptionText}>{opt.label}</ThemedText>
-              </Pressable>
-            ))}
+            {SLEEP_OPTIONS.map((opt) => {
+              const isActive =
+                (sleepTimerType === 'time' &&
+                  typeof opt.value === 'number' &&
+                  opt.value === usePlaybackStore.getState().sleepTimerDuration) ||
+                (sleepTimerType === 'chapter' && opt.value === 'chapter');
+
+              return (
+                <Pressable
+                  key={String(opt.value)}
+                  onPress={() => {
+                    if (typeof opt.value === 'number') {
+                      startSleepTimer(opt.value, 'time');
+                    } else {
+                      startSleepTimer(0, 'chapter');
+                    }
+                    setShowSleepSheet(false);
+                  }}
+                  style={[
+                    styles.sleepOption,
+                    { backgroundColor: isActive ? theme.accent : theme.backgroundSelected },
+                    opt.value === 'chapter' && { flex: 1 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Sleep after ${opt.label}`}
+                  accessibilityState={{ selected: isActive }}
+                >
+                  <ThemedText style={[styles.sleepOptionText, isActive ? { color: '#000' } : {}]}>
+                    {opt.label}
+                  </ThemedText>
+                </Pressable>
+              );
+            })}
           </View>
           <Pressable
             onPress={() => setShowSleepSheet(false)}
             style={[styles.sheetCloseBtn, { backgroundColor: theme.backgroundSelected }]}
+            accessibilityRole="button"
+            accessibilityLabel="Close sleep timer sheet"
           >
             <ThemedText themeColor="textSecondary">Close</ThemedText>
           </Pressable>
         </Animated.View>
       )}
 
-      {/* ─── Bookmark Sheet ─── */}
+      {/* ── Bookmark Sheet ── */}
       {showBookmarkSheet && (
         <Animated.View
-          entering={FadeIn.duration(200)}
+          entering={SlideInDown.springify().damping(18).stiffness(150)}
+          exiting={SlideOutDown.duration(220)}
           style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement }]}
         >
-          <View style={styles.sheetHandle} />
+          <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
           <ThemedText style={styles.sheetTitle}>Add Bookmark</ThemedText>
           <ThemedText themeColor="textSecondary" style={styles.bookmarkPosition}>
             {currentChapter?.title ?? ''} · {formatTime(position)}
@@ -740,6 +916,8 @@ export default function PlayerScreen() {
           <Pressable
             onPress={handleAddBookmark}
             style={[styles.bookmarkAddBtn, { backgroundColor: theme.accent }]}
+            accessibilityRole="button"
+            accessibilityLabel="Save bookmark at current position"
           >
             <Check size={18} color="#000" />
             <ThemedText style={styles.bookmarkAddText}>Save Bookmark</ThemedText>
@@ -753,6 +931,8 @@ export default function PlayerScreen() {
                     key={bm.id}
                     onPress={() => { seekTo(bm.position); setShowBookmarkSheet(false); }}
                     style={[styles.bookmarkItem, { borderBottomColor: theme.backgroundSelected }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Bookmark: ${bm.note ?? formatTime(bm.position)}, in ${bmChapter?.title ?? 'unknown chapter'}`}
                   >
                     <Bookmark size={14} color={theme.accent} />
                     <View style={styles.bookmarkItemInfo}>
@@ -771,21 +951,21 @@ export default function PlayerScreen() {
           <Pressable
             onPress={() => setShowBookmarkSheet(false)}
             style={[styles.sheetCloseBtn, { backgroundColor: theme.backgroundSelected }]}
+            accessibilityRole="button"
+            accessibilityLabel="Close bookmark sheet"
           >
             <ThemedText themeColor="textSecondary">Close</ThemedText>
           </Pressable>
         </Animated.View>
       )}
 
-      {/* Dim overlay when a sheet is open */}
+      {/* Dim backdrop for sheets */}
       {(showSpeedSheet || showSleepSheet || showBookmarkSheet) && (
         <Pressable
           style={styles.dimOverlay}
-          onPress={() => {
-            setShowSpeedSheet(false);
-            setShowSleepSheet(false);
-            setShowBookmarkSheet(false);
-          }}
+          onPress={closeAllSheets}
+          accessibilityLabel="Close sheet"
+          importantForAccessibility="no-hide-descendants"
         />
       )}
     </SafeAreaView>
@@ -808,14 +988,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four, paddingVertical: Spacing.two, borderRadius: Spacing.three,
   },
 
+  // Error
+  errorBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
+    marginHorizontal: Spacing.three, marginBottom: Spacing.two,
+    padding: Spacing.two + 4, borderRadius: Spacing.three,
+  },
+  errorText: { flex: 1, color: '#FF6B6B', fontSize: 13 },
+
   // Header
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: Spacing.three, paddingTop: Spacing.two, paddingBottom: Spacing.two,
   },
-  headerBtn: { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  headerBtn: {
+    width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center',
+  },
   headerCenter: { flex: 1, alignItems: 'center' },
-  headerLabel: { letterSpacing: 1 },
+  headerLabel: { letterSpacing: 1.2, fontSize: 11, fontWeight: '700' },
   sleepBadge: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: Spacing.two, paddingVertical: 5, borderRadius: 100,
@@ -833,6 +1023,12 @@ const styles = StyleSheet.create({
     width: COVER_SIZE, height: COVER_SIZE, borderRadius: Spacing.four,
     alignItems: 'center', justifyContent: 'center',
   },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFill,
+    borderRadius: Spacing.four,
+    backgroundColor: '#00000055',
+    alignItems: 'center', justifyContent: 'center',
+  },
 
   // Info
   infoSection: {
@@ -841,8 +1037,7 @@ const styles = StyleSheet.create({
   chapterTitle: { fontSize: 22, fontWeight: '800', lineHeight: 28, paddingRight: 40 },
   bookTitle: { fontSize: 14, marginTop: 4 },
   bookmarkQuickBtn: {
-    position: 'absolute', right: Spacing.four, top: 0,
-    padding: Spacing.two,
+    position: 'absolute', right: Spacing.four, top: 0, padding: Spacing.two,
   },
 
   // Seek bar
@@ -851,22 +1046,21 @@ const styles = StyleSheet.create({
     height: 36, justifyContent: 'center', position: 'relative', marginBottom: 2,
   },
   seekTrack: {
-    height: 4, borderRadius: 2, overflow: 'hidden', position: 'relative',
+    height: 5, borderRadius: 2.5, overflow: 'hidden', position: 'relative',
+    width: SEEK_BAR_WIDTH,
   },
   seekChapterRange: { position: 'absolute', height: '100%', top: 0 },
-  seekFill: { position: 'absolute', height: '100%', left: 0, top: 0, borderRadius: 2 },
+  seekFill: { position: 'absolute', height: '100%', left: 0, top: 0, borderRadius: 2.5 },
   seekThumb: {
     position: 'absolute', width: 16, height: 16, borderRadius: 8,
-    top: '50%', marginTop: -8,
+    top: '50%', marginTop: -10, // shifted to center over track
   },
   timeRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     marginTop: 2, marginBottom: Spacing.two,
   },
   chapterProgressLabel: { fontSize: 11 },
-  chapterSeekBg: {
-    height: 2, borderRadius: 1, overflow: 'hidden', marginTop: 2,
-  },
+  chapterSeekBg: { height: 2, borderRadius: 1, overflow: 'hidden', marginTop: 2 },
   chapterSeekFill: { height: '100%', borderRadius: 1 },
   chapterLabel: { textAlign: 'center', marginTop: 4, fontSize: 12 },
 
@@ -887,7 +1081,7 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  // Bottom row
+  // Bottom toolbar
   bottomRow: {
     flexDirection: 'row', justifyContent: 'center', gap: Spacing.three,
     paddingHorizontal: Spacing.four, paddingTop: Spacing.two,
@@ -899,18 +1093,16 @@ const styles = StyleSheet.create({
   },
   bottomChipText: { fontSize: 13, fontWeight: '600' },
 
-  // Autoplay Countdown
+  // Countdown overlay
   countdownOverlay: {
     ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', zIndex: 50,
   },
   countdownCard: {
-    width: SCREEN_WIDTH * 0.75, borderRadius: 20, padding: Spacing.five,
+    width: SCREEN_WIDTH * 0.75, borderRadius: 24, padding: Spacing.five,
     alignItems: 'center', gap: Spacing.three,
   },
-  countdownLabel: { fontSize: 13, letterSpacing: 1 },
-  countdownNumber: {
-    fontSize: 72, fontWeight: '800', lineHeight: 80,
-  },
+  countdownLabel: { fontSize: 11, letterSpacing: 1.5, fontWeight: '700' },
+  countdownNumber: { fontSize: 72, fontWeight: '800', lineHeight: 80 },
   countdownButtons: { flexDirection: 'row', gap: Spacing.three, marginTop: Spacing.two },
   countdownBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
@@ -925,11 +1117,10 @@ const styles = StyleSheet.create({
     padding: Spacing.four, paddingBottom: Spacing.five,
     zIndex: 40,
     shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.3, shadowRadius: 12, elevation: 20,
+    shadowOpacity: 0.35, shadowRadius: 16, elevation: 24,
   },
   sheetHandle: {
-    width: 36, height: 4, borderRadius: 2, backgroundColor: '#ffffff33',
-    alignSelf: 'center', marginBottom: Spacing.three,
+    width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: Spacing.three,
   },
   sheetTitle: { fontSize: 17, fontWeight: '700', marginBottom: Spacing.three },
   sheetCloseBtn: {
@@ -954,7 +1145,6 @@ const styles = StyleSheet.create({
     borderRadius: 100, minWidth: 56, alignItems: 'center',
   },
   sleepOptionText: { fontWeight: '600', fontSize: 14 },
-
   clearTimerBtn: {
     flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
     paddingHorizontal: Spacing.three, paddingVertical: Spacing.two,
@@ -980,6 +1170,6 @@ const styles = StyleSheet.create({
 
   // Dim overlay
   dimOverlay: {
-    ...StyleSheet.absoluteFill, backgroundColor: '#00000066', zIndex: 30,
+    ...StyleSheet.absoluteFill, backgroundColor: '#00000070', zIndex: 30,
   },
 });

@@ -164,6 +164,9 @@ export default function LibraryScreen() {
           ]}
           onPress={handleImport}
           disabled={isImporting}
+          accessibilityRole="button"
+          accessibilityLabel={isImporting ? 'Importing audiobook…' : 'Import audiobook from device'}
+          accessibilityState={{ busy: isImporting, disabled: isImporting }}
         >
           {isImporting ? (
             <ActivityIndicator size="small" color={theme.accent} />
@@ -207,6 +210,8 @@ export default function LibraryScreen() {
                 styles.continueCard,
                 { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.9 : 1 },
               ]}
+              accessibilityRole="button"
+              accessibilityLabel={`Continue listening to ${recentPlayback.title}. ${formatTimeRemaining(recentPlayback.duration - recentPlayback.position)} remaining.`}
             >
               {recentPlayback.coverPath ? (
                 <Image source={{ uri: recentPlayback.coverPath }} style={styles.continueCover} />
@@ -311,6 +316,8 @@ export default function LibraryScreen() {
                     { opacity: pressed ? 0.8 : 1 },
                   ]}
                   onPress={() => router.push(`/book/${book.id}` as Href)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${book.title}${book.author ? ` by ${book.author}` : ''}, ${formatDuration(book.duration)}`}
                 >
                   {book.coverPath ? (
                     <Image source={{ uri: book.coverPath }} style={styles.gridCover} />

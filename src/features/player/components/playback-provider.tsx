@@ -19,6 +19,7 @@ import {
   getCurrentUri,
   setCurrentUri,
 } from '../services/audio-service';
+import { usePlaybackStore as useStore } from '@/hooks/use-playback-store';
 
 // ---------------------------------------------------------------------------
 // Context – exposes playback controls to the entire app
@@ -78,6 +79,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const tickSleepTimer = usePlaybackStore((s) => s.tickSleepTimer);
   const startAutoplayCountdown = usePlaybackStore((s) => s.startAutoplayCountdown);
   const isAutoplayCountdown = usePlaybackStore((s) => s.isAutoplayCountdown);
+  const setPlaybackError = usePlaybackStore((s) => s.setPlaybackError);
 
   // Ref guards to prevent side-effect loops
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -93,7 +95,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   // ---------------------------------------------------------------------------
-  // 2. Sync player status → Zustand store
+  // 2. Sync player status → Zustand store + handle errors
   // ---------------------------------------------------------------------------
   useEffect(() => {
     setIsLoaded(status.isLoaded);
@@ -102,7 +104,27 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     if (status.isLoaded) {
       setPosition(status.currentTime);
     }
-  }, [status.isLoaded, status.playing, status.currentTime, setIsLoaded, setIsPlaying, setPosition]);
+
+    // Surface playback errors to the UI
+    if (status.error) {
+      const msg = status.error.includes('format')
+        ? 'Unsupported audio format. Try importing a different file.'
+        : status.error.includes('corrupt') || status.error.includes('decode')
+        ? 'The audio file appears to be corrupted.'
+        : `Playback error: ${status.error}`;
+      setPlaybackError(msg);
+    }
+  }, [status.isLoaded, status.playing, status.currentTime, status.error, setIsLoaded, setIsPlaying, setPosition, setPlaybackError]);
+
+  // iOS: if media services reset (daemon crash), attempt to recover automatically
+  useEffect(() => {
+    if ((status as { mediaServicesDidReset?: boolean }).mediaServicesDidReset) {
+      const { currentBook: book, position: pos } = useStore.getState();
+      if (book) {
+        loadAudio(book.audioPath, pos, false).catch(console.warn);
+      }
+    }
+  }, [(status as { mediaServicesDidReset?: boolean }).mediaServicesDidReset]);
 
   // ---------------------------------------------------------------------------
   // 3. Chapter boundary detection

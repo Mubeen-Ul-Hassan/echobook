@@ -8,6 +8,7 @@ import { SQLiteProvider } from 'expo-sqlite';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { migrateDbIfNeeded } from '@/database/schema';
 import { PlaybackProvider } from '@/features/player/components/playback-provider';
+import { MiniPlayer } from '@/components/mini-player';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -39,6 +40,8 @@ export default function RootLayout() {
                 }}
               />
             </Stack>
+            {/* Mini-player floating bar (shown on all non-player screens) */}
+            <MiniPlayer />
           </PlaybackProvider>
         </SQLiteProvider>
       </Suspense>

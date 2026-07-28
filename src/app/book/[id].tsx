@@ -5,7 +5,9 @@ import {
   ScrollView,
   Dimensions,
   View,
+  Alert,
 } from 'react-native';
+import { preload } from 'expo-audio';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Image } from 'expo-image';
@@ -56,9 +58,11 @@ export default function BookDetailScreen() {
   const [playback, setPlayback] = useState<PlaybackRecord | null>(null);
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'chapters' | 'bookmarks'>('chapters');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     if (!id) return;
+    setLoadError(null);
     try {
       const [bookData, chaptersData, playbackData, bookmarksData] = await Promise.all([
         dbService.getAudiobookById(db, id),
@@ -70,8 +74,20 @@ export default function BookDetailScreen() {
       setChapters(chaptersData);
       setPlayback(playbackData);
       setBookmarks(bookmarksData);
+
+      // Preload the audio file in the background so the player starts in < 150 ms
+      if (bookData?.audioPath) {
+        preload({ uri: bookData.audioPath }).catch(() => {
+          // Preload failure is non-fatal; playback will still work
+        });
+      }
+
+      if (!bookData) {
+        setLoadError('Book not found. It may have been removed.');
+      }
     } catch (error) {
       console.error('Failed to load book data:', error);
+      setLoadError('Failed to load book details. Please try again.');
     }
   }, [db, id]);
 
@@ -152,7 +168,23 @@ export default function BookDetailScreen() {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.loadingContainer}>
-          <ThemedText themeColor="textSecondary">Loading...</ThemedText>
+          {loadError ? (
+            <>
+              <ThemedText themeColor="textSecondary" style={{ textAlign: 'center', marginBottom: 12 }}>
+                {loadError}
+              </ThemedText>
+              <Pressable
+                onPress={() => router.back()}
+                style={[styles.errorBackBtn, { backgroundColor: theme.backgroundElement }]}
+                accessibilityRole="button"
+                accessibilityLabel="Go back to library"
+              >
+                <ThemedText>Go Back</ThemedText>
+              </Pressable>
+            </>
+          ) : (
+            <ThemedText themeColor="textSecondary">Loading...</ThemedText>
+          )}
         </View>
       </SafeAreaView>
     );
@@ -281,6 +313,8 @@ export default function BookDetailScreen() {
               { backgroundColor: pressed ? '#E06E00' : theme.accent },
             ]}
             onPress={() => handlePlay()}
+            accessibilityRole="button"
+            accessibilityLabel={playback && playback.position > 0 ? `Resume ${book.title}` : `Play ${book.title}`}
           >
             <Play size={20} color="#000" fill="#000" style={{ marginLeft: 2 }} />
             <ThemedText style={styles.primaryButtonText}>
@@ -295,6 +329,8 @@ export default function BookDetailScreen() {
                 { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
               ]}
               onPress={handleStartOver}
+              accessibilityRole="button"
+              accessibilityLabel={`Start ${book.title} from the beginning`}
             >
               <RotateCcw size={18} color={theme.text} />
               <ThemedText style={styles.secondaryButtonText}>Start Over</ThemedText>
@@ -308,6 +344,9 @@ export default function BookDetailScreen() {
             <Pressable
               style={[styles.tab, activeTab === 'chapters' && { borderBottomColor: theme.accent }]}
               onPress={() => setActiveTab('chapters')}
+              accessibilityRole="tab"
+              accessibilityLabel={`Chapters, ${chapters.length} total`}
+              accessibilityState={{ selected: activeTab === 'chapters' }}
             >
               <ThemedText
                 style={[
@@ -321,6 +360,9 @@ export default function BookDetailScreen() {
             <Pressable
               style={[styles.tab, activeTab === 'bookmarks' && { borderBottomColor: theme.accent }]}
               onPress={() => setActiveTab('bookmarks')}
+              accessibilityRole="tab"
+              accessibilityLabel={`Bookmarks, ${bookmarks.length} saved`}
+              accessibilityState={{ selected: activeTab === 'bookmarks' }}
             >
               <ThemedText
                 style={[
@@ -355,6 +397,9 @@ export default function BookDetailScreen() {
                       },
                     ]}
                     onPress={() => handlePlay(chapter)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${chapter.title}, ${formatDuration(chapter.duration)}${isActive ? ', currently playing' : isComplete ? ', completed' : ''}`}
+                    accessibilityState={{ selected: isActive }}
                   >
                     {/* Chapter Number / Status */}
                     <View style={styles.chapterIndex}>
@@ -465,6 +510,13 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: Spacing.four,
+  },
+  errorBackBtn: {
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.three,
+    marginTop: Spacing.two,
   },
 
   // --- Hero ---
