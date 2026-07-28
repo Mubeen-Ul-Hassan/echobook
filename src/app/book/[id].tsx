@@ -43,7 +43,13 @@ export default function BookDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
 
-  const { setCurrentBook, setCurrentChapter, setPosition, setSpeed } = usePlaybackStore();
+  const {
+    setCurrentBook,
+    setCurrentChapter,
+    setPosition,
+    setSpeed,
+    setChapters: setStoreChapters,
+  } = usePlaybackStore();
 
   const [book, setBook] = useState<AudiobookRecord | null>(null);
   const [chapters, setChapters] = useState<ChapterRecord[]>([]);
@@ -115,31 +121,31 @@ export default function BookDetailScreen() {
   const handlePlay = (chapter?: ChapterRecord) => {
     if (!book) return;
     setCurrentBook(book);
+    setStoreChapters(chapters);
 
     if (chapter) {
       setCurrentChapter(chapter);
       setPosition(chapter.startTime);
     } else if (playback) {
-      // Resume from saved position
       const activeChapter = chapters.find(ch => ch.id === playback.chapterId) || chapters[0] || null;
       setCurrentChapter(activeChapter);
       setPosition(playback.position);
       if (playback.speed) setSpeed(playback.speed);
     } else {
-      // Start from the beginning
       setCurrentChapter(chapters[0] || null);
       setPosition(0);
     }
 
-    // TODO: navigate to player screen in Milestone 4
+    router.push('/player');
   };
 
   const handleStartOver = () => {
     if (!book) return;
     setCurrentBook(book);
+    setStoreChapters(chapters);
     setCurrentChapter(chapters[0] || null);
     setPosition(0);
-    // TODO: navigate to player screen in Milestone 4
+    router.push('/player');
   };
 
   if (!book) {
@@ -421,8 +427,10 @@ export default function BookDetailScreen() {
                       onPress={() => {
                         if (!book) return;
                         setCurrentBook(book);
+                        setStoreChapters(chapters);
                         if (ch) setCurrentChapter(ch);
                         setPosition(bm.position);
+                        router.push('/player');
                       }}
                     >
                       <Bookmark size={16} color={theme.accent} />

@@ -38,7 +38,7 @@ export default function LibraryScreen() {
   const [isImporting, setIsImporting] = useState(false);
   
   // Playback state from store
-  const { currentBook, isPlaying, setIsPlaying, setCurrentBook, setPosition, setCurrentChapter } = usePlaybackStore();
+  const { currentBook, isPlaying, setIsPlaying, setCurrentBook, setPosition, setCurrentChapter, setChapters } = usePlaybackStore();
   const [recentPlayback, setRecentPlayback] = useState<(PlaybackRecord & { title: string; author: string | null; coverPath: string | null; duration: number }) | null>(null);
 
   // Load books from database
@@ -85,28 +85,30 @@ export default function LibraryScreen() {
     }
   };
 
-  // Handle Play/Pause from the Continue Listening card
+  // Handle Continue Listening – loads the book and navigates straight to the player
   const handleContinueListening = async (bookId: string) => {
     try {
       const book = await dbService.getAudiobookById(db, bookId);
       if (book) {
-        // Fetch playbacks
-        const playback = await dbService.getPlayback(db, bookId);
-        const chapters = await dbService.getChaptersByBookId(db, bookId);
-        
+        const [playback, bookChapters] = await Promise.all([
+          dbService.getPlayback(db, bookId),
+          dbService.getChaptersByBookId(db, bookId),
+        ]);
+
         setCurrentBook(book);
-        
+        setChapters(bookChapters);
+
         if (playback) {
           setPosition(playback.position);
-          const activeChapter = chapters.find(ch => ch.id === playback.chapterId) || chapters[0] || null;
+          const activeChapter =
+            bookChapters.find((ch) => ch.id === playback.chapterId) || bookChapters[0] || null;
           setCurrentChapter(activeChapter);
         } else {
           setPosition(0);
-          setCurrentChapter(chapters[0] || null);
+          setCurrentChapter(bookChapters[0] || null);
         }
 
-        // Navigate to the book detail screen
-        router.push(`/book/${bookId}` as Href);
+        router.push('/player');
       }
     } catch (error) {
       console.error('Failed to start playback:', error);
