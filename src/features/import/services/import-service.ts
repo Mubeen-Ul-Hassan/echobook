@@ -1,5 +1,6 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { Platform } from 'react-native';
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { dbService } from '@/database/services';
 import { parseM4bMetadata } from './m4b-parser';
@@ -9,16 +10,34 @@ export const importService = {
   /**
    * Opens the system file picker to select audiobook files, parses their metadata/chapters,
    * copies them into persistent application storage, and records them in the database.
+   *
+   * Note: Import is intended for Android / iOS. Web browsers cannot reliably read large
+   * local M4B files via expo-file-system (FileReader fails on media blobs).
    */
   async pickAndImportAudiobooks(db: SQLiteDatabase): Promise<AudiobookRecord[]> {
+    if (Platform.OS === 'web') {
+      throw new Error(
+        'Import works on Android or iOS only. Start the app with Expo Go on your phone ' +
+          '(npx expo start, then scan the QR code) — not in the browser.',
+      );
+    }
+
+    if (!FileSystem.documentDirectory) {
+      throw new Error('App storage is unavailable. Restart the app and try again.');
+    }
+
     const pickerResult = await DocumentPicker.getDocumentAsync({
+      // Broaden types so Android file managers surface .m4b files reliably
       type: [
+        'audio/*',
         'audio/mp4',
         'audio/x-m4b',
         'audio/m4b',
         'audio/x-m4a',
         'audio/m4a',
         'audio/aac',
+        'video/mp4',
+        'application/octet-stream',
       ],
       copyToCacheDirectory: true,
       multiple: true,

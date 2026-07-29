@@ -43,7 +43,7 @@ interface PlaybackState {
   // Sleep Timer Actions
   startSleepTimer: (duration: number, timerType: 'time' | 'chapter') => void;
   clearSleepTimer: () => void;
-  tickSleepTimer: () => void;
+  tickSleepTimer: (onExpired?: () => void) => void;
 
   // Autoplay Countdown Actions
   startAutoplayCountdown: () => void;
@@ -108,17 +108,17 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
       sleepTimerType: null,
     }),
 
-  tickSleepTimer: () => {
+  tickSleepTimer: (onExpired?: () => void) => {
     const { sleepTimerRemaining, sleepTimerType, isPlaying } = get();
     if (!isPlaying || sleepTimerRemaining === null || sleepTimerType === 'chapter') return;
 
     if (sleepTimerRemaining <= 1) {
       set({
-        isPlaying: false,
         sleepTimerDuration: null,
         sleepTimerRemaining: null,
         sleepTimerType: null,
       });
+      onExpired?.();
     } else {
       set({ sleepTimerRemaining: sleepTimerRemaining - 1 });
     }

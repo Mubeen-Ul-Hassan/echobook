@@ -8,6 +8,7 @@ import {
   View,
   ActivityIndicator,
   AccessibilityInfo,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
@@ -913,6 +914,22 @@ export default function PlayerScreen() {
           <ThemedText themeColor="textSecondary" style={styles.bookmarkPosition}>
             {currentChapter?.title ?? ''} · {formatTime(position)}
           </ThemedText>
+          <TextInput
+            style={[
+              styles.bookmarkInput,
+              {
+                color: theme.text,
+                backgroundColor: theme.backgroundSelected,
+                borderColor: theme.backgroundSelected,
+              },
+            ]}
+            placeholder="Add an optional note..."
+            placeholderTextColor={theme.textSecondary}
+            value={bookmarkNote}
+            onChangeText={setBookmarkNote}
+            maxLength={100}
+            keyboardAppearance="dark"
+          />
           <Pressable
             onPress={handleAddBookmark}
             style={[styles.bookmarkAddBtn, { backgroundColor: theme.accent }]}
@@ -1154,6 +1171,14 @@ const styles = StyleSheet.create({
 
   // Bookmark sheet
   bookmarkPosition: { fontSize: 13, marginBottom: Spacing.two },
+  bookmarkInput: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: Spacing.two,
+    fontSize: 15,
+    marginBottom: Spacing.three,
+    borderWidth: 1,
+  },
   bookmarkAddBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     gap: Spacing.two, paddingVertical: Spacing.two + 4, borderRadius: Spacing.three,

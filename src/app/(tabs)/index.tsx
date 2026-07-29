@@ -5,6 +5,7 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
+  Alert,
   Dimensions,
   Platform,
   View,
@@ -38,7 +39,16 @@ export default function LibraryScreen() {
   const [isImporting, setIsImporting] = useState(false);
   
   // Playback state from store
-  const { currentBook, isPlaying, setIsPlaying, setCurrentBook, setPosition, setCurrentChapter, setChapters } = usePlaybackStore();
+  const {
+    currentBook,
+    isPlaying,
+    setIsPlaying,
+    setCurrentBook,
+    setPosition,
+    setCurrentChapter,
+    setChapters,
+    setSpeed,
+  } = usePlaybackStore();
   const [recentPlayback, setRecentPlayback] = useState<(PlaybackRecord & { title: string; author: string | null; coverPath: string | null; duration: number }) | null>(null);
 
   // Load books from database
@@ -70,16 +80,45 @@ export default function LibraryScreen() {
     loadBooks();
   }, [loadBooks]);
 
-  // Handle Import
+  // Handle Import — native only (Android / iOS). Web cannot read large local M4B files.
   const handleImport = async () => {
+    if (Platform.OS === 'web') {
+      const message =
+        'Import does not work in the browser.\n\n' +
+        '1. In the terminal run: npx expo start\n' +
+        '2. Open Expo Go on your Android phone\n' +
+        '3. Scan the QR code (do not open localhost in Chrome)\n' +
+        '4. Tap Import inside Expo Go';
+      // window.alert works reliably on web; Alert.alert often does not
+      if (typeof window !== 'undefined') {
+        window.alert(message);
+      } else {
+        Alert.alert('Use Expo Go on your phone', message);
+      }
+      return;
+    }
+
     setIsImporting(true);
     try {
       const imported = await importService.pickAndImportAudiobooks(db);
       if (imported.length > 0) {
         await loadBooks();
+        Alert.alert(
+          'Imported',
+          `Added ${imported.length} audiobook${imported.length === 1 ? '' : 's'} to your library.`,
+        );
+      } else {
+        Alert.alert(
+          'Nothing imported',
+          'No supported files were added. Pick a .m4b, .m4a, or .mp4 audiobook and try again.',
+        );
       }
     } catch (error) {
-      console.error('Import failed:', error);
+      const message =
+        error instanceof Error
+          ? error.message
+          : 'Something went wrong while importing. Please try again on Android.';
+      Alert.alert('Import failed', message);
     } finally {
       setIsImporting(false);
     }
@@ -103,9 +142,11 @@ export default function LibraryScreen() {
           const activeChapter =
             bookChapters.find((ch) => ch.id === playback.chapterId) || bookChapters[0] || null;
           setCurrentChapter(activeChapter);
+          if (playback.speed) setSpeed(playback.speed);
         } else {
           setPosition(0);
           setCurrentChapter(bookChapters[0] || null);
+          setSpeed(1.0);
         }
 
         router.push('/player');
@@ -161,11 +202,18 @@ export default function LibraryScreen() {
           style={({ pressed }) => [
             styles.importButton,
             { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
+            Platform.OS === 'web' && { opacity: 0.7 },
           ]}
           onPress={handleImport}
           disabled={isImporting}
           accessibilityRole="button"
-          accessibilityLabel={isImporting ? 'Importing audiobook…' : 'Import audiobook from device'}
+          accessibilityLabel={
+            Platform.OS === 'web'
+              ? 'Import only available on phone via Expo Go'
+              : isImporting
+              ? 'Importing audiobook…'
+              : 'Import audiobook from device'
+          }
           accessibilityState={{ busy: isImporting, disabled: isImporting }}
         >
           {isImporting ? (
@@ -174,12 +222,23 @@ export default function LibraryScreen() {
             <>
               <Plus size={18} color={theme.accent} />
               <ThemedText style={[styles.importButtonText, { color: theme.accent }]}>
-                Import
+                {Platform.OS === 'web' ? 'Phone only' : 'Import'}
               </ThemedText>
             </>
           )}
         </Pressable>
       </ThemedView>
+
+      {Platform.OS === 'web' && (
+        <ThemedView
+          type="backgroundElement"
+          style={styles.webNotice}
+        >
+          <ThemedText themeColor="textSecondary" style={styles.webNoticeText}>
+            You are in the browser. Open this project in Expo Go on your Android phone to import and play audiobooks.
+          </ThemedText>
+        </ThemedView>
+      )}
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
@@ -376,6 +435,17 @@ const styles = StyleSheet.create({
   importButtonText: {
     fontWeight: '700',
     fontSize: 14,
+  },
+  webNotice: {
+    marginHorizontal: Spacing.four,
+    marginBottom: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two + 2,
+    borderRadius: Spacing.three,
+  },
+  webNoticeText: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   scrollContent: {
     paddingBottom: Spacing.five,

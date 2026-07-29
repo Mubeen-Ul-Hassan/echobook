@@ -80,6 +80,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const startAutoplayCountdown = usePlaybackStore((s) => s.startAutoplayCountdown);
   const isAutoplayCountdown = usePlaybackStore((s) => s.isAutoplayCountdown);
   const setPlaybackError = usePlaybackStore((s) => s.setPlaybackError);
+  const setCurrentBook = usePlaybackStore((s) => s.setCurrentBook);
+  const setChapters = usePlaybackStore((s) => s.setChapters);
+  const setSpeed = usePlaybackStore((s) => s.setSpeed);
 
   // Ref guards to prevent side-effect loops
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -88,11 +91,50 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const isLoadingNewBookRef = useRef<boolean>(false);
 
   // ---------------------------------------------------------------------------
-  // 1. Initialise audio session on mount
+  // 1. Initialise audio session on mount and restore last session
   // ---------------------------------------------------------------------------
   useEffect(() => {
     initAudioSession().catch(console.warn);
   }, []);
+
+  useEffect(() => {
+    async function restoreLastSession() {
+      try {
+        // Retrieve the most recent playback entry from SQLite
+        const recents = await dbService.getRecentPlaybacks(db, 1);
+        if (recents.length > 0) {
+          const lastPlayback = recents[0];
+          const lastBook = await dbService.getAudiobookById(db, lastPlayback.bookId);
+          if (lastBook) {
+            const bookChapters = await dbService.getChaptersByBookId(db, lastPlayback.bookId);
+
+            // Populate the store so components (like the mini-player) reflect the state
+            setCurrentBook(lastBook);
+            setChapters(bookChapters);
+            
+            const activeChapter = bookChapters.find(ch => ch.id === lastPlayback.chapterId) || bookChapters[0] || null;
+            setCurrentChapter(activeChapter);
+            setPosition(lastPlayback.position);
+            if (lastPlayback.speed) {
+              setSpeed(lastPlayback.speed);
+            }
+
+            // Warm up the player singleton with the URI and correct timestamp
+            setCurrentUri(lastBook.audioPath);
+            await loadAudio(lastBook.audioPath, lastPlayback.position, false);
+            
+            // Re-apply playback speed to the native audio player once loaded
+            if (lastPlayback.speed) {
+              player.setPlaybackRate(lastPlayback.speed);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[PlaybackProvider] Failed to restore last session:', err);
+      }
+    }
+    restoreLastSession();
+  }, [db]);
 
   // ---------------------------------------------------------------------------
   // 2. Sync player status → Zustand store + handle errors
@@ -187,9 +229,13 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   // Sleep timer countdown: tick every second while playing
   useEffect(() => {
     if (!status.playing) return;
-    const id = setInterval(tickSleepTimer, 1000);
+    const id = setInterval(() => {
+      tickSleepTimer(() => {
+        player.pause();
+      });
+    }, 1000);
     return () => clearInterval(id);
-  }, [status.playing, tickSleepTimer]);
+  }, [status.playing, tickSleepTimer, player]);
 
   // Sleep-timer type=chapter: pause when chapter changes
   useEffect(() => {
