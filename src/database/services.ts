@@ -71,10 +71,46 @@ export const dbService = {
   },
 
   async getChaptersByBookId(db: SQLiteDatabase, bookId: string): Promise<ChapterRecord[]> {
-    return await db.getAllAsync<ChapterRecord>(
+    const existing = await db.getAllAsync<ChapterRecord>(
       'SELECT * FROM chapters WHERE bookId = ? ORDER BY `order` ASC;',
       [bookId]
     );
+
+    if (existing.length === 1) {
+      const book = await db.getFirstAsync<AudiobookRecord>('SELECT * FROM audiobooks WHERE id = ?;', [bookId]);
+      if (book && book.duration > 600) {
+        // Auto-segment this single-chapter book into 15-min chapters
+        const SEGMENT_DURATION = 900;
+        const newChapters: ChapterRecord[] = [];
+        let currentTime = 0;
+        let idx = 0;
+
+        while (currentTime < book.duration) {
+          const nextTime = Math.min(book.duration, currentTime + SEGMENT_DURATION);
+          const remaining = book.duration - nextTime;
+          const finalEndTime = remaining < 120 ? book.duration : nextTime;
+
+          newChapters.push({
+            id: `${bookId}_ch_${idx}`,
+            bookId,
+            title: `Chapter ${idx + 1}`,
+            startTime: currentTime,
+            endTime: finalEndTime,
+            duration: finalEndTime - currentTime,
+            order: idx,
+          });
+
+          currentTime = finalEndTime;
+          idx++;
+        }
+
+        await db.runAsync('DELETE FROM chapters WHERE bookId = ?;', [bookId]);
+        await this.insertChapters(db, newChapters);
+        return newChapters;
+      }
+    }
+
+    return existing;
   },
 
   // --- Playback Operations ---
