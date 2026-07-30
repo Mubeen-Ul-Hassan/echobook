@@ -1091,7 +1091,13 @@ const styles = StyleSheet.create({
     width: 52, height: 52,
   },
   skipLabel: {
-    position: 'absolute', fontSize: 9, fontWeight: '700', bottom: 8,
+    position: 'absolute',
+    fontSize: 9,
+    fontWeight: '800',
+    top: 20,
+    left: 0,
+    right: 0,
+    textAlign: 'center',
   },
   playBtn: {
     width: 72, height: 72, borderRadius: 36,
