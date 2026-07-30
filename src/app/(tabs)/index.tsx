@@ -126,6 +126,10 @@ export default function HomeScreen() {
     setIsImporting(true);
     try {
       const imported = await importService.pickAndImportAudiobooks(db);
+      if (imported === null) {
+        // User canceled file picker
+        return;
+      }
       if (imported.length > 0) {
         await loadBooks();
         Alert.alert(
