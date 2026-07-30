@@ -14,7 +14,7 @@ export const importService = {
    * Note: Import is intended for Android / iOS. Web browsers cannot reliably read large
    * local M4B files via expo-file-system (FileReader fails on media blobs).
    */
-  async pickAndImportAudiobooks(db: SQLiteDatabase): Promise<AudiobookRecord[]> {
+  async pickAndImportAudiobooks(db: SQLiteDatabase): Promise<AudiobookRecord[] | null> {
     if (Platform.OS === 'web') {
       throw new Error(
         'Import works on Android or iOS only. Start the app with Expo Go on your phone ' +
@@ -44,7 +44,7 @@ export const importService = {
     });
 
     if (pickerResult.canceled) {
-      return [];
+      return null;
     }
 
     const importedBooks: AudiobookRecord[] = [];
