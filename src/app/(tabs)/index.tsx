@@ -13,11 +13,24 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Image } from 'expo-image';
-import { Plus, Search, Play, BookOpen, Clock, Music } from 'lucide-react-native';
+import {
+  Plus,
+  Search,
+  Play,
+  BookOpen,
+  Clock,
+  Music,
+  LayoutGrid,
+  List,
+  Sparkles,
+  CheckCircle,
+  Headphones,
+  X,
+} from 'lucide-react-native';
 import { useRouter, type Href } from 'expo-router';
+import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@/hooks/use-theme';
 import { dbService } from '@/database/services';
 import { importService } from '@/features/import/services/import-service';
@@ -28,39 +41,52 @@ import { usePlaybackStore } from '@/hooks/use-playback-store';
 const { width } = Dimensions.get('window');
 const COLUMN_WIDTH = (width - Spacing.four * 2 - Spacing.three) / 2;
 
-export default function LibraryScreen() {
+type CategoryFilter = 'all' | 'in_progress' | 'completed';
+type ViewMode = 'grid' | 'list';
+
+export default function HomeScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
   const router = useRouter();
 
   // Component State
   const [books, setBooks] = useState<AudiobookRecord[]>([]);
+  const [playbacksMap, setPlaybacksMap] = useState<Record<string, PlaybackRecord>>({});
   const [searchQuery, setSearchQuery] = useState('');
   const [isImporting, setIsImporting] = useState(false);
-  
+  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+
   // Playback state from store
   const {
-    currentBook,
-    isPlaying,
-    setIsPlaying,
     setCurrentBook,
     setPosition,
     setCurrentChapter,
     setChapters,
     setSpeed,
   } = usePlaybackStore();
-  const [recentPlayback, setRecentPlayback] = useState<(PlaybackRecord & { title: string; author: string | null; coverPath: string | null; duration: number }) | null>(null);
 
-  // Load books from database
+  const [recentPlayback, setRecentPlayback] = useState<
+    (PlaybackRecord & { title: string; author: string | null; coverPath: string | null; duration: number }) | null
+  >(null);
+
+  // Load books & playbacks from database
   const loadBooks = useCallback(async () => {
     try {
       const allBooks = await dbService.getAudiobooks(db);
       setBooks(allBooks);
 
+      // Fetch all playback states to build progress map
+      const pbMap: Record<string, PlaybackRecord> = {};
+      for (const book of allBooks) {
+        const pb = await dbService.getPlayback(db, book.id);
+        if (pb) pbMap[book.id] = pb;
+      }
+      setPlaybacksMap(pbMap);
+
       // Get the most recent playback
       const recents = await dbService.getRecentPlaybacks(db, 1);
       if (recents.length > 0) {
-        // Fetch the corresponding book to get its full duration
         const fullBook = await dbService.getAudiobookById(db, recents[0].bookId);
         if (fullBook) {
           setRecentPlayback({
@@ -80,16 +106,15 @@ export default function LibraryScreen() {
     loadBooks();
   }, [loadBooks]);
 
-  // Handle Import — native only (Android / iOS). Web cannot read large local M4B files.
+  // Handle Import
   const handleImport = async () => {
     if (Platform.OS === 'web') {
       const message =
         'Import does not work in the browser.\n\n' +
         '1. In the terminal run: npx expo start\n' +
         '2. Open Expo Go on your Android phone\n' +
-        '3. Scan the QR code (do not open localhost in Chrome)\n' +
+        '3. Scan the QR code\n' +
         '4. Tap Import inside Expo Go';
-      // window.alert works reliably on web; Alert.alert often does not
       if (typeof window !== 'undefined') {
         window.alert(message);
       } else {
@@ -110,22 +135,22 @@ export default function LibraryScreen() {
       } else {
         Alert.alert(
           'Nothing imported',
-          'No supported files were added. Pick a .m4b, .m4a, or .mp4 audiobook and try again.',
+          'No supported files were added. Pick a .m4b, .m4a, or .mp4 audiobook.',
         );
       }
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : 'Something went wrong while importing. Please try again on Android.';
+          : 'Something went wrong while importing. Please try again.';
       Alert.alert('Import failed', message);
     } finally {
       setIsImporting(false);
     }
   };
 
-  // Handle Continue Listening – loads the book and navigates straight to the player
-  const handleContinueListening = async (bookId: string) => {
+  // Handle Continue / Play
+  const handleStartBook = async (bookId: string) => {
     try {
       const book = await dbService.getAudiobookById(db, bookId);
       if (book) {
@@ -156,130 +181,132 @@ export default function LibraryScreen() {
     }
   };
 
-  // Filter books based on search
+  // Filter books based on search & category
   const filteredBooks = books.filter((book) => {
     const query = searchQuery.toLowerCase();
-    return (
+    const matchesSearch =
       book.title.toLowerCase().includes(query) ||
       (book.author && book.author.toLowerCase().includes(query)) ||
-      (book.genre && book.genre.toLowerCase().includes(query)) ||
-      (book.series && book.series.toLowerCase().includes(query))
-    );
+      (book.genre && book.genre.toLowerCase().includes(query));
+
+    if (!matchesSearch) return false;
+
+    const pb = playbacksMap[book.id];
+    if (categoryFilter === 'in_progress') {
+      return pb && pb.position > 0 && pb.completed === 0;
+    }
+    if (categoryFilter === 'completed') {
+      return pb && pb.completed === 1;
+    }
+    return true;
   });
 
   // Formatting helpers
   const formatTimeRemaining = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
-    if (h > 0) {
-      return `${h}h ${m}m remaining`;
-    }
+    if (h > 0) return `${h}h ${m}m remaining`;
     return `${m}m remaining`;
   };
 
   const formatDuration = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
-    if (h > 0) {
-      return `${h}h ${m}m`;
-    }
+    if (h > 0) return `${h}h ${m}`;
     return `${m}m`;
   };
 
+  const getBookProgressRatio = (bookId: string, duration: number) => {
+    const pb = playbacksMap[bookId];
+    if (!pb || duration <= 0) return 0;
+    return Math.min(1, Math.max(0, pb.position / duration));
+  };
+
   return (
-    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
-      {/* Header */}
-      <ThemedView style={styles.header}>
-        <ThemedView>
-          <ThemedText type="subtitle" style={styles.headerTitle}>
-            Library
-          </ThemedText>
-          <ThemedText themeColor="textSecondary" style={styles.headerSubtitle}>
-            {books.length} {books.length === 1 ? 'audiobook' : 'audiobooks'} local
-          </ThemedText>
-        </ThemedView>
+    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
+      {/* ── Brand Header Bar ── */}
+      <View style={styles.header}>
+        <View style={styles.brandRow}>
+          <View style={[styles.logoIcon, { backgroundColor: theme.accent }]}>
+            <Headphones size={20} color="#000" />
+          </View>
+          <View>
+            <ThemedText style={styles.appName}>EchoBook</ThemedText>
+            <ThemedText themeColor="textSecondary" style={styles.appSub}>
+              {books.length} {books.length === 1 ? 'audiobook' : 'audiobooks'}
+            </ThemedText>
+          </View>
+        </View>
+
         <Pressable
           style={({ pressed }) => [
             styles.importButton,
-            { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
-            Platform.OS === 'web' && { opacity: 0.7 },
+            { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
           ]}
           onPress={handleImport}
           disabled={isImporting}
           accessibilityRole="button"
-          accessibilityLabel={
-            Platform.OS === 'web'
-              ? 'Import only available on phone via Expo Go'
-              : isImporting
-              ? 'Importing audiobook…'
-              : 'Import audiobook from device'
-          }
-          accessibilityState={{ busy: isImporting, disabled: isImporting }}
+          accessibilityLabel="Import audiobook"
         >
           {isImporting ? (
-            <ActivityIndicator size="small" color={theme.accent} />
+            <ActivityIndicator size="small" color="#000" />
           ) : (
             <>
-              <Plus size={18} color={theme.accent} />
-              <ThemedText style={[styles.importButtonText, { color: theme.accent }]}>
-                {Platform.OS === 'web' ? 'Phone only' : 'Import'}
-              </ThemedText>
+              <Plus size={16} color="#000" strokeWidth={3} />
+              <ThemedText style={styles.importButtonText}>Import</ThemedText>
             </>
           )}
         </Pressable>
-      </ThemedView>
-
-      {Platform.OS === 'web' && (
-        <ThemedView
-          type="backgroundElement"
-          style={styles.webNotice}
-        >
-          <ThemedText themeColor="textSecondary" style={styles.webNoticeText}>
-            You are in the browser. Open this project in Expo Go on your Android phone to import and play audiobooks.
-          </ThemedText>
-        </ThemedView>
-      )}
+      </View>
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Search Bar */}
-        <ThemedView type="backgroundElement" style={styles.searchContainer}>
+        {/* ── Search Bar ── */}
+        <Animated.View entering={FadeInDown.duration(300)} style={[styles.searchContainer, { backgroundColor: theme.backgroundElement }]}>
           <Search size={18} color={theme.textSecondary} style={styles.searchIcon} />
           <TextInput
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search title, author, genre..."
+            placeholder="Search audiobooks, authors..."
             placeholderTextColor={theme.textSecondary}
             value={searchQuery}
             onChangeText={setSearchQuery}
             keyboardAppearance="dark"
           />
-        </ThemedView>
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
+              <X size={16} color={theme.textSecondary} />
+            </Pressable>
+          )}
+        </Animated.View>
 
-        {/* Continue Listening Section */}
+        {/* ── Continue Listening Section ── */}
         {recentPlayback && !searchQuery && (
-          <ThemedView style={styles.sectionContainer}>
-            <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitle}>
-              CONTINUE LISTENING
-            </ThemedText>
+          <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.sectionContainer}>
+            <View style={styles.sectionHeaderRow}>
+              <Sparkles size={14} color={theme.accent} style={{ marginRight: 6 }} />
+              <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitleText}>
+                CONTINUE LISTENING
+              </ThemedText>
+            </View>
             <Pressable
-              onPress={() => handleContinueListening(recentPlayback.bookId)}
+              onPress={() => handleStartBook(recentPlayback.bookId)}
               style={({ pressed }) => [
                 styles.continueCard,
-                { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.9 : 1 },
+                { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.92 : 1 },
               ]}
               accessibilityRole="button"
-              accessibilityLabel={`Continue listening to ${recentPlayback.title}. ${formatTimeRemaining(recentPlayback.duration - recentPlayback.position)} remaining.`}
+              accessibilityLabel={`Continue listening to ${recentPlayback.title}`}
             >
               {recentPlayback.coverPath ? (
                 <Image source={{ uri: recentPlayback.coverPath }} style={styles.continueCover} />
               ) : (
                 <View style={[styles.continueCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
-                  <Music size={24} color={theme.textSecondary} />
+                  <Music size={28} color={theme.textSecondary} />
                 </View>
               )}
-              
+
               <View style={styles.continueInfo}>
                 <ThemedText numberOfLines={1} style={styles.continueBookTitle}>
                   {recentPlayback.title}
@@ -287,23 +314,22 @@ export default function LibraryScreen() {
                 <ThemedText numberOfLines={1} themeColor="textSecondary" style={styles.continueAuthor}>
                   {recentPlayback.author || 'Unknown Author'}
                 </ThemedText>
-                
-                {/* Progress Indicators */}
+
                 <View style={styles.continueProgressRow}>
-                  <Clock size={12} color={theme.textSecondary} style={{ marginRight: Spacing.one }} />
-                  <ThemedText type="small" themeColor="textSecondary">
+                  <Clock size={12} color={theme.accent} style={{ marginRight: 4 }} />
+                  <ThemedText type="small" style={{ color: theme.accent, fontWeight: '600' }}>
                     {formatTimeRemaining(recentPlayback.duration - recentPlayback.position)}
                   </ThemedText>
                 </View>
 
-                {/* Progress Bar */}
+                {/* Smooth Progress Bar */}
                 <View style={[styles.progressBarBg, { backgroundColor: theme.backgroundSelected }]}>
                   <View
                     style={[
                       styles.progressBarFill,
                       {
                         backgroundColor: theme.accent,
-                        width: `${Math.min(100, (recentPlayback.position / recentPlayback.duration) * 100)}%`,
+                        width: `${Math.min(100, Math.max(2, (recentPlayback.position / recentPlayback.duration) * 100))}%`,
                       },
                     ]}
                   />
@@ -312,34 +338,48 @@ export default function LibraryScreen() {
 
               <Pressable
                 style={[styles.continuePlayButton, { backgroundColor: theme.accent }]}
-                onPress={() => handleContinueListening(recentPlayback.bookId)}
+                onPress={() => handleStartBook(recentPlayback.bookId)}
               >
-                <Play size={20} color="#000000" fill="#000000" style={{ marginLeft: 2 }} />
+                <Play size={18} color="#000" fill="#000" style={{ marginLeft: 2 }} />
               </Pressable>
             </Pressable>
-          </ThemedView>
+          </Animated.View>
         )}
 
-        {/* Recently Added Section (Horizontal shelf) */}
+        {/* ── Recently Added Shelf ── */}
         {books.length > 0 && !searchQuery && (
-          <ThemedView style={styles.sectionContainer}>
-            <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitle}>
+          <Animated.View entering={FadeInDown.delay(150).duration(300)} style={styles.sectionContainer}>
+            <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitleText}>
               RECENTLY ADDED
             </ThemedText>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.recentShelf}>
-              {books.slice(0, 5).map((book) => (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.recentShelf}
+            >
+              {books.slice(0, 6).map((book) => (
                 <Pressable
                   key={book.id}
-                  style={({ pressed }) => [styles.recentCard, { opacity: pressed ? 0.8 : 1 }]}
+                  style={({ pressed }) => [
+                    styles.recentCard,
+                    { opacity: pressed ? 0.85 : 1 },
+                  ]}
                   onPress={() => router.push(`/book/${book.id}` as Href)}
                 >
-                  {book.coverPath ? (
-                    <Image source={{ uri: book.coverPath }} style={styles.recentCover} />
-                  ) : (
-                    <View style={[styles.recentCoverPlaceholder, { backgroundColor: theme.backgroundElement }]}>
-                      <Music size={24} color={theme.textSecondary} />
+                  <View style={styles.recentCoverWrapper}>
+                    {book.coverPath ? (
+                      <Image source={{ uri: book.coverPath }} style={styles.recentCover} />
+                    ) : (
+                      <View style={[styles.recentCoverPlaceholder, { backgroundColor: theme.backgroundElement }]}>
+                        <Music size={32} color={theme.textSecondary} />
+                      </View>
+                    )}
+                    <View style={styles.durationBadge}>
+                      <ThemedText style={styles.durationBadgeText}>
+                        {formatDuration(book.duration)}
+                      </ThemedText>
                     </View>
-                  )}
+                  </View>
                   <ThemedText numberOfLines={1} style={styles.recentBookTitle}>
                     {book.title}
                   </ThemedText>
@@ -349,58 +389,205 @@ export default function LibraryScreen() {
                 </Pressable>
               ))}
             </ScrollView>
-          </ThemedView>
+          </Animated.View>
         )}
 
-        {/* All Books List */}
-        <ThemedView style={styles.sectionContainer}>
-          <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitle}>
-            {searchQuery ? 'SEARCH RESULTS' : 'ALL AUDIOBOOKS'}
-          </ThemedText>
-          
+        {/* ── All Audiobooks Section ── */}
+        <Animated.View entering={FadeInDown.delay(200).duration(300)} style={styles.sectionContainer}>
+          <View style={styles.catalogHeader}>
+            <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitleText}>
+              {searchQuery ? 'SEARCH RESULTS' : 'AUDIOBOOKS'}
+            </ThemedText>
+
+            {/* View Mode Toggle: Grid vs List */}
+            <View style={[styles.viewToggleGroup, { backgroundColor: theme.backgroundElement }]}>
+              <Pressable
+                onPress={() => setViewMode('grid')}
+                style={[
+                  styles.toggleBtn,
+                  viewMode === 'grid' && { backgroundColor: theme.backgroundSelected },
+                ]}
+              >
+                <LayoutGrid size={15} color={viewMode === 'grid' ? theme.accent : theme.textSecondary} />
+              </Pressable>
+              <Pressable
+                onPress={() => setViewMode('list')}
+                style={[
+                  styles.toggleBtn,
+                  viewMode === 'list' && { backgroundColor: theme.backgroundSelected },
+                ]}
+              >
+                <List size={15} color={viewMode === 'list' ? theme.accent : theme.textSecondary} />
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Category Filter Chips */}
+          {!searchQuery && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
+              {(['all', 'in_progress', 'completed'] as CategoryFilter[]).map((cat) => {
+                const isActive = categoryFilter === cat;
+                const label =
+                  cat === 'all'
+                    ? 'All'
+                    : cat === 'in_progress'
+                    ? 'In Progress'
+                    : 'Completed';
+                return (
+                  <Pressable
+                    key={cat}
+                    onPress={() => setCategoryFilter(cat)}
+                    style={[
+                      styles.filterChip,
+                      {
+                        backgroundColor: isActive ? theme.accent : theme.backgroundElement,
+                      },
+                    ]}
+                  >
+                    <ThemedText
+                      style={[
+                        styles.filterChipText,
+                        { color: isActive ? '#000' : theme.textSecondary },
+                      ]}
+                    >
+                      {label}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          )}
+
+          {/* Audiobooks Content */}
           {filteredBooks.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <BookOpen size={48} color={theme.backgroundSelected} style={{ marginBottom: Spacing.two }} />
-              <ThemedText themeColor="textSecondary" style={{ textAlign: 'center' }}>
-                {searchQuery ? 'No audiobooks match your search.' : 'Your library is empty. Tap "+" above to import local M4B audiobooks.'}
+            <View style={[styles.emptyContainer, { backgroundColor: theme.backgroundElement }]}>
+              <BookOpen size={44} color={theme.textSecondary} style={{ marginBottom: Spacing.two }} />
+              <ThemedText type="smallBold" style={{ textAlign: 'center', marginBottom: 4 }}>
+                {searchQuery ? 'No matching audiobooks' : 'No audiobooks in this category'}
+              </ThemedText>
+              <ThemedText themeColor="textSecondary" style={{ textAlign: 'center', fontSize: 13 }}>
+                {searchQuery
+                  ? 'Try searching with a different term'
+                  : 'Tap "+ Import" at the top to add local M4B/MP3/M4A audiobooks.'}
               </ThemedText>
             </View>
-          ) : (
+          ) : viewMode === 'grid' ? (
+            /* --- GRID VIEW --- */
             <View style={styles.grid}>
-              {filteredBooks.map((book) => (
-                <Pressable
-                  key={book.id}
-                  style={({ pressed }) => [
-                    styles.gridCard,
-                    { opacity: pressed ? 0.8 : 1 },
-                  ]}
-                  onPress={() => router.push(`/book/${book.id}` as Href)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`${book.title}${book.author ? ` by ${book.author}` : ''}, ${formatDuration(book.duration)}`}
-                >
-                  {book.coverPath ? (
-                    <Image source={{ uri: book.coverPath }} style={styles.gridCover} />
-                  ) : (
-                    <View style={[styles.gridCoverPlaceholder, { backgroundColor: theme.backgroundElement }]}>
-                      <Music size={32} color={theme.textSecondary} />
+              {filteredBooks.map((book) => {
+                const ratio = getBookProgressRatio(book.id, book.duration);
+                const pb = playbacksMap[book.id];
+                const isDone = pb?.completed === 1;
+
+                return (
+                  <Pressable
+                    key={book.id}
+                    style={({ pressed }) => [
+                      styles.gridCard,
+                      { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.88 : 1 },
+                    ]}
+                    onPress={() => router.push(`/book/${book.id}` as Href)}
+                  >
+                    <View style={styles.gridCoverContainer}>
+                      {book.coverPath ? (
+                        <Image source={{ uri: book.coverPath }} style={styles.gridCover} />
+                      ) : (
+                        <View style={[styles.gridCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
+                          <Music size={36} color={theme.textSecondary} />
+                        </View>
+                      )}
+
+                      {/* Play overlay badge */}
+                      <Pressable
+                        style={[styles.gridPlayBadge, { backgroundColor: theme.accent }]}
+                        onPress={() => handleStartBook(book.id)}
+                      >
+                        <Play size={14} color="#000" fill="#000" style={{ marginLeft: 2 }} />
+                      </Pressable>
+
+                      {isDone && (
+                        <View style={styles.doneBadge}>
+                          <CheckCircle size={14} color="#4ADE80" />
+                        </View>
+                      )}
                     </View>
-                  )}
-                  <View style={styles.gridInfo}>
-                    <ThemedText numberOfLines={1} style={styles.gridBookTitle}>
-                      {book.title}
-                    </ThemedText>
-                    <ThemedText numberOfLines={1} type="small" themeColor="textSecondary" style={styles.gridAuthor}>
-                      {book.author || 'Unknown Author'}
-                    </ThemedText>
-                    <ThemedText type="small" themeColor="textSecondary">
-                      {formatDuration(book.duration)}
-                    </ThemedText>
-                  </View>
-                </Pressable>
-              ))}
+
+                    <View style={styles.gridInfo}>
+                      <ThemedText numberOfLines={1} style={styles.gridBookTitle}>
+                        {book.title}
+                      </ThemedText>
+                      <ThemedText numberOfLines={1} type="small" themeColor="textSecondary" style={styles.gridAuthor}>
+                        {book.author || 'Unknown Author'}
+                      </ThemedText>
+                      <View style={styles.gridMetaRow}>
+                        <ThemedText type="small" themeColor="textSecondary">
+                          {formatDuration(book.duration)}
+                        </ThemedText>
+                      </View>
+
+                      {/* Progress Bar */}
+                      {ratio > 0 && (
+                        <View style={[styles.cardProgressBg, { backgroundColor: theme.backgroundSelected }]}>
+                          <View style={[styles.cardProgressFill, { backgroundColor: theme.accent, width: `${ratio * 100}%` }]} />
+                        </View>
+                      )}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : (
+            /* --- LIST VIEW --- */
+            <View style={styles.listContainer}>
+              {filteredBooks.map((book) => {
+                const ratio = getBookProgressRatio(book.id, book.duration);
+                const pb = playbacksMap[book.id];
+                const isDone = pb?.completed === 1;
+
+                return (
+                  <Pressable
+                    key={book.id}
+                    style={({ pressed }) => [
+                      styles.listRow,
+                      { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.88 : 1 },
+                    ]}
+                    onPress={() => router.push(`/book/${book.id}` as Href)}
+                  >
+                    {book.coverPath ? (
+                      <Image source={{ uri: book.coverPath }} style={styles.listCover} />
+                    ) : (
+                      <View style={[styles.listCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
+                        <Music size={22} color={theme.textSecondary} />
+                      </View>
+                    )}
+
+                    <View style={styles.listInfo}>
+                      <ThemedText numberOfLines={1} style={styles.listTitle}>
+                        {book.title}
+                      </ThemedText>
+                      <ThemedText numberOfLines={1} type="small" themeColor="textSecondary">
+                        {book.author || 'Unknown Author'} · {formatDuration(book.duration)}
+                      </ThemedText>
+
+                      {ratio > 0 && (
+                        <View style={[styles.listProgressBg, { backgroundColor: theme.backgroundSelected }]}>
+                          <View style={[styles.listProgressFill, { backgroundColor: theme.accent, width: `${ratio * 100}%` }]} />
+                        </View>
+                      )}
+                    </View>
+
+                    <Pressable
+                      style={[styles.listPlayBtn, { backgroundColor: theme.accent }]}
+                      onPress={() => handleStartBook(book.id)}
+                    >
+                      <Play size={14} color="#000" fill="#000" style={{ marginLeft: 2 }} />
+                    </Pressable>
+                  </Pressable>
+                );
+              })}
             </View>
           )}
-        </ThemedView>
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -410,53 +597,63 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+
+  // Brand Header Bar
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.three,
+    paddingTop: Spacing.two,
+    paddingBottom: Spacing.three,
   },
-  headerTitle: {
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two + 2,
+  },
+  logoIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  appName: {
+    fontSize: 20,
     fontWeight: '800',
+    letterSpacing: -0.5,
   },
-  headerSubtitle: {
-    fontSize: 13,
-    marginTop: 2,
+  appSub: {
+    fontSize: 12,
+    marginTop: -1,
   },
   importButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.three,
+    paddingHorizontal: Spacing.three + 2,
     paddingVertical: Spacing.two,
-    borderRadius: Spacing.three,
-    gap: Spacing.one,
+    borderRadius: 100,
+    gap: 6,
   },
   importButtonText: {
     fontWeight: '700',
-    fontSize: 14,
-  },
-  webNotice: {
-    marginHorizontal: Spacing.four,
-    marginBottom: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two + 2,
-    borderRadius: Spacing.three,
-  },
-  webNoticeText: {
     fontSize: 13,
-    lineHeight: 18,
+    color: '#000',
   },
+
   scrollContent: {
-    paddingBottom: Spacing.five,
+    paddingBottom: Spacing.six,
   },
+
+  // Search
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: Spacing.four,
     marginBottom: Spacing.four,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Platform.OS === 'ios' ? Spacing.two : Spacing.one,
+    paddingVertical: Platform.OS === 'ios' ? Spacing.two : Spacing.one + 2,
     borderRadius: Spacing.three,
   },
   searchIcon: {
@@ -464,135 +661,292 @@ const styles = StyleSheet.create({
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
-    paddingVertical: 4,
+    fontSize: 15,
+    paddingVertical: 2,
   },
+
+  // Section general
   sectionContainer: {
     marginBottom: Spacing.five,
     paddingHorizontal: Spacing.four,
   },
-  sectionTitle: {
-    letterSpacing: 1.5,
-    marginBottom: Spacing.three,
-    fontSize: 12,
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.two,
   },
+  sectionTitleText: {
+    letterSpacing: 1.2,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  // Continue Listening Card
   continueCard: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.three,
-    borderRadius: Spacing.four,
+    borderRadius: 18,
     position: 'relative',
+    marginTop: 4,
   },
   continueCover: {
-    width: 64,
-    height: 64,
-    borderRadius: Spacing.two,
+    width: 68,
+    height: 68,
+    borderRadius: 12,
   },
   continueCoverPlaceholder: {
-    width: 64,
-    height: 64,
-    borderRadius: Spacing.two,
+    width: 68,
+    height: 68,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   continueInfo: {
     flex: 1,
     marginLeft: Spacing.three,
-    paddingRight: Spacing.six,
+    paddingRight: 44,
   },
   continueBookTitle: {
     fontWeight: '700',
     fontSize: 16,
   },
   continueAuthor: {
-    fontSize: 14,
-    marginTop: 1,
+    fontSize: 13,
+    marginTop: 2,
   },
   continueProgressRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   progressBarBg: {
-    height: 3,
+    height: 4,
     borderRadius: 2,
     marginTop: 8,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
+    borderRadius: 2,
   },
   continuePlayButton: {
     position: 'absolute',
     right: Spacing.three,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // Recently Added Shelf
   recentShelf: {
     gap: Spacing.three,
+    paddingTop: Spacing.two,
   },
   recentCard: {
-    width: 100,
+    width: 140,
+  },
+  recentCoverWrapper: {
+    position: 'relative',
+    marginBottom: Spacing.two,
   },
   recentCover: {
-    width: 100,
-    height: 100,
-    borderRadius: Spacing.three,
-    marginBottom: Spacing.one,
+    width: 140,
+    height: 140,
+    borderRadius: 16,
   },
   recentCoverPlaceholder: {
-    width: 100,
-    height: 100,
-    borderRadius: Spacing.three,
-    marginBottom: Spacing.one,
+    width: 140,
+    height: 140,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  recentBookTitle: {
-    fontWeight: '600',
-    fontSize: 13,
+  durationBadge: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: '#000000AA',
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
+  durationBadgeText: {
+    color: '#FFF',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  recentBookTitle: {
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
+  // Catalog Section & Controls
+  catalogHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.two,
+  },
+  viewToggleGroup: {
+    flexDirection: 'row',
+    borderRadius: 8,
+    padding: 2,
+  },
+  toggleBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+
+  // Filter Chips
+  filterRow: {
+    gap: Spacing.two,
+    marginBottom: Spacing.three,
+    paddingVertical: 2,
+  },
+  filterChip: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 6,
+    borderRadius: 100,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
+  // Empty state
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.six,
+    paddingHorizontal: Spacing.four,
+    borderRadius: 18,
+    marginTop: Spacing.two,
+  },
+
+  // Grid View
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.three,
+    marginTop: Spacing.one,
   },
   gridCard: {
     width: COLUMN_WIDTH,
-    marginBottom: Spacing.three,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginBottom: 2,
+  },
+  gridCoverContainer: {
+    position: 'relative',
   },
   gridCover: {
     width: COLUMN_WIDTH,
-    height: COLUMN_WIDTH,
-    borderRadius: Spacing.four,
-    marginBottom: Spacing.two,
+    height: COLUMN_WIDTH * 0.95,
   },
   gridCoverPlaceholder: {
     width: COLUMN_WIDTH,
-    height: COLUMN_WIDTH,
-    borderRadius: Spacing.four,
-    marginBottom: Spacing.two,
+    height: COLUMN_WIDTH * 0.95,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  gridPlayBadge: {
+    position: 'absolute',
+    bottom: 10,
+    right: 10,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  doneBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#00000099',
+    borderRadius: 10,
+    padding: 3,
+  },
   gridInfo: {
-    paddingHorizontal: 2,
+    padding: Spacing.three,
   },
   gridBookTitle: {
     fontWeight: '700',
     fontSize: 14,
   },
   gridAuthor: {
-    marginTop: 1,
-    marginBottom: 2,
+    marginTop: 2,
+    fontSize: 12,
   },
-  emptyContainer: {
+  gridMetaRow: {
+    marginTop: 4,
+  },
+  cardProgressBg: {
+    height: 3,
+    borderRadius: 1.5,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  cardProgressFill: {
+    height: '100%',
+    borderRadius: 1.5,
+  },
+
+  // List View
+  listContainer: {
+    gap: Spacing.two,
+    marginTop: Spacing.one,
+  },
+  listRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.two + 2,
+    borderRadius: 14,
+  },
+  listCover: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+  },
+  listCoverPlaceholder: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.six,
-    paddingHorizontal: Spacing.four,
+  },
+  listInfo: {
+    flex: 1,
+    marginLeft: Spacing.three,
+    marginRight: Spacing.two,
+  },
+  listTitle: {
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  listProgressBg: {
+    height: 3,
+    borderRadius: 1.5,
+    marginTop: 6,
+    overflow: 'hidden',
+  },
+  listProgressFill: {
+    height: '100%',
+    borderRadius: 1.5,
+  },
+  listPlayBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
