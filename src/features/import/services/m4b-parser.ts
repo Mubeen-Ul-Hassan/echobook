@@ -477,14 +477,43 @@ export async function parseM4bMetadata(fileUri: string): Promise<ParsedM4bData> 
     result.title = filename.substring(0, filename.lastIndexOf('.')) || filename;
   }
   
-  // Fallback to single chapter if no chapters found
-  if (result.chapters.length === 0) {
-    result.chapters = [{
-      title: 'Chapter 1',
-      startTime: 0,
-      endTime: result.duration || 0,
-    }];
+  // If no chapters found or only 1 chapter covering > 10 mins (600s), auto-segment into logical ~15 min chapters
+  if (result.chapters.length === 0 || (result.chapters.length === 1 && result.duration > 600)) {
+    result.chapters = autoSegmentChapters(result.duration);
   }
 
   return result;
 }
+
+export function autoSegmentChapters(duration: number): ParsedChapter[] {
+  if (duration <= 0) {
+    return [{ title: 'Chapter 1', startTime: 0, endTime: 0 }];
+  }
+
+  const SEGMENT_DURATION = 900; // 15 minutes per chapter
+  if (duration <= 600) {
+    return [{ title: 'Chapter 1', startTime: 0, endTime: duration }];
+  }
+
+  const chapters: ParsedChapter[] = [];
+  let currentTime = 0;
+  let chapterIndex = 1;
+
+  while (currentTime < duration) {
+    const nextTime = Math.min(duration, currentTime + SEGMENT_DURATION);
+    const remaining = duration - nextTime;
+    const finalEndTime = remaining < 120 ? duration : nextTime;
+
+    chapters.push({
+      title: `Chapter ${chapterIndex}`,
+      startTime: currentTime,
+      endTime: finalEndTime,
+    });
+
+    currentTime = finalEndTime;
+    chapterIndex++;
+  }
+
+  return chapters;
+}
+
