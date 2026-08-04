@@ -82,7 +82,8 @@ function formatTime(seconds: number): string {
   return `${m}:${pad(sec)}`;
 }
 
-function formatRemaining(remaining: number): string {
+function formatRemaining(remaining: number, totalDuration: number = 0): string {
+  if (totalDuration <= 0) return '-:--';
   return `-${formatTime(remaining)}`;
 }
 
@@ -412,9 +413,13 @@ export default function PlayerScreen() {
   // Computed values
   // ---------------------------------------------------------------------------
 
+  const storeDuration = usePlaybackStore((s) => s.duration);
+  const bookDuration = (currentBook?.duration && currentBook.duration > 0)
+    ? currentBook.duration
+    : storeDuration;
+
   const chapterStart = currentChapter?.startTime ?? 0;
-  const chapterEnd = currentChapter?.endTime ?? (currentBook?.duration ?? 0);
-  const bookDuration = currentBook?.duration ?? 0;
+  const chapterEnd = currentChapter?.endTime ?? bookDuration;
   const remaining = Math.max(0, bookDuration - position);
   const currentChapterIndex = chapters.findIndex((ch) => ch.id === currentChapter?.id);
   const hasNextChapter = currentChapterIndex < chapters.length - 1;
@@ -651,7 +656,7 @@ export default function PlayerScreen() {
               themeColor="textSecondary"
               accessibilityLabel={`Remaining: ${formatTime(remaining)}`}
             >
-              {formatRemaining(remaining)}
+              {formatRemaining(remaining, bookDuration)}
             </ThemedText>
           </View>
 

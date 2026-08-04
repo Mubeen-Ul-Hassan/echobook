@@ -50,6 +50,14 @@ export const dbService = {
     ]);
   },
 
+  async updateAudiobookDuration(db: SQLiteDatabase, bookId: string, duration: number): Promise<void> {
+    await db.runAsync('UPDATE audiobooks SET duration = ?, updatedAt = ? WHERE id = ?;', [
+      duration,
+      new Date().toISOString(),
+      bookId,
+    ]);
+  },
+
   async deleteAudiobook(db: SQLiteDatabase, id: string): Promise<void> {
     await db.runAsync('DELETE FROM audiobooks WHERE id = ?;', [id]);
   },

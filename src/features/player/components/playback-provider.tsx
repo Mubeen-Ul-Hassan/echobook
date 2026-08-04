@@ -75,6 +75,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const setIsPlaying = usePlaybackStore((s) => s.setIsPlaying);
   const setIsLoaded = usePlaybackStore((s) => s.setIsLoaded);
   const setPosition = usePlaybackStore((s) => s.setPosition);
+  const setDuration = usePlaybackStore((s) => s.setDuration);
   const setCurrentChapter = usePlaybackStore((s) => s.setCurrentChapter);
   const clearSleepTimer = usePlaybackStore((s) => s.clearSleepTimer);
   const tickSleepTimer = usePlaybackStore((s) => s.tickSleepTimer);
@@ -152,6 +153,20 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
     if (status.isLoaded) {
       setPosition(status.currentTime);
+
+      const realDuration = status.duration;
+      if (realDuration && realDuration > 0) {
+        setDuration(realDuration);
+
+        // If currentBook in state/DB had 0 duration, update DB and auto-segment chapters
+        if (currentBook && (!currentBook.duration || currentBook.duration <= 0)) {
+          dbService.updateAudiobookDuration(db, currentBook.id, realDuration).then(() => {
+            dbService.getChaptersByBookId(db, currentBook.id).then((refreshed) => {
+              if (refreshed.length > 0) setChapters(refreshed);
+            });
+          }).catch(console.warn);
+        }
+      }
     }
 
     // Surface playback errors to the UI
@@ -163,7 +178,21 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         : `Playback error: ${status.error}`;
       setPlaybackError(msg);
     }
-  }, [status.isLoaded, status.playing, status.currentTime, status.error, setIsLoaded, setIsPlaying, setPosition, setPlaybackError]);
+  }, [
+    status.isLoaded,
+    status.playing,
+    status.currentTime,
+    status.duration,
+    status.error,
+    currentBook,
+    db,
+    setIsLoaded,
+    setIsPlaying,
+    setPosition,
+    setDuration,
+    setChapters,
+    setPlaybackError,
+  ]);
 
   // iOS: if media services reset (daemon crash), attempt to recover automatically
   useEffect(() => {

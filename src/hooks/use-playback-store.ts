@@ -38,6 +38,7 @@ interface PlaybackState {
   setIsPlaying: (isPlaying: boolean) => void;
   setIsLoaded: (isLoaded: boolean) => void;
   setPosition: (position: number) => void;
+  setDuration: (duration: number) => void;
   setSpeed: (speed: number) => void;
 
   // Sleep Timer Actions
@@ -91,6 +92,12 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
   setIsLoaded: (isLoaded) => set({ isLoaded }),
 
   setPosition: (position) => set({ position }),
+
+  setDuration: (duration) =>
+    set((state) => ({
+      duration,
+      currentBook: state.currentBook ? { ...state.currentBook, duration } : null,
+    })),
 
   setSpeed: (speed) => set({ speed }),
 
