@@ -790,7 +790,7 @@ async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null
 
 // --- Main Parser Function ---
 
-export async function parseM4bMetadata(fileUri: string): Promise<ParsedM4bData> {
+export async function parseM4bMetadata(fileUri: string, fallbackFileName?: string): Promise<ParsedM4bData> {
   const result: ParsedM4bData = {
     title: '',
     author: null,
@@ -994,10 +994,23 @@ export async function parseM4bMetadata(fileUri: string): Promise<ParsedM4bData> 
     console.error('Error parsing audio metadata:', error);
   }
 
-  // Fallback title if empty
-  if (!result.title) {
-    const filename = fileUri.substring(fileUri.lastIndexOf('/') + 1);
-    result.title = filename.substring(0, filename.lastIndexOf('.')) || filename;
+  // Fallback title if empty or if it contains raw content URI strings
+  const isInvalidTitle =
+    !result.title ||
+    result.title.startsWith('content:') ||
+    result.title.startsWith('file:') ||
+    result.title.includes('%3A') ||
+    result.title.includes('%2F');
+
+  if (isInvalidTitle) {
+    if (fallbackFileName) {
+      result.title = fallbackFileName.includes('.')
+        ? fallbackFileName.substring(0, fallbackFileName.lastIndexOf('.'))
+        : fallbackFileName;
+    } else {
+      const rawName = decodeURIComponent(fileUri.substring(fileUri.lastIndexOf('/') + 1));
+      result.title = rawName.includes('.') ? rawName.substring(0, rawName.lastIndexOf('.')) : rawName;
+    }
   }
 
   // Fallback auto-segmentation if no chapters found or 1 chapter covering > 10 mins (600s)

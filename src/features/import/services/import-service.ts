@@ -59,7 +59,7 @@ export const importService = {
         const fileExt = asset.name.substring(asset.name.lastIndexOf('.')) || '.m4b';
 
         // Extract metadata & chapters from the picked file URI
-        const parsedData = await parseM4bMetadata(asset.uri);
+        const parsedData = await parseM4bMetadata(asset.uri, asset.name);
 
         // Save cover image to persistent storage if extracted
         let coverPath: string | null = null;
