@@ -369,6 +369,7 @@ export default function PlayerScreen() {
   const [showBookmarkSheet, setShowBookmarkSheet] = useState(false);
   const [bookmarkNote, setBookmarkNote] = useState('');
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
+  const [timeDisplayMode, setTimeDisplayMode] = useState<'chapter' | 'book'>('chapter');
 
   // Notify store that player screen is open (hides mini-player)
   useEffect(() => {
@@ -420,10 +421,18 @@ export default function PlayerScreen() {
 
   const chapterStart = currentChapter?.startTime ?? 0;
   const chapterEnd = currentChapter?.endTime ?? bookDuration;
-  const remaining = Math.max(0, bookDuration - position);
   const currentChapterIndex = chapters.findIndex((ch) => ch.id === currentChapter?.id);
   const hasNextChapter = currentChapterIndex < chapters.length - 1;
   const hasPrevChapter = currentChapterIndex > 0;
+
+  const chapterElapsed = Math.max(0, position - chapterStart);
+  const chapterDuration = Math.max(0, chapterEnd - chapterStart);
+  const chapterRemaining = Math.max(0, chapterEnd - position);
+  const totalRemaining = Math.max(0, bookDuration - position);
+
+  const displayElapsed = timeDisplayMode === 'chapter' ? chapterElapsed : position;
+  const displayRemaining = timeDisplayMode === 'chapter' ? chapterRemaining : totalRemaining;
+  const displayTotalDuration = timeDisplayMode === 'chapter' ? chapterDuration : bookDuration;
 
   const chapterProgress =
     chapterEnd > chapterStart
@@ -641,23 +650,29 @@ export default function PlayerScreen() {
           />
 
           <View style={styles.timeRow}>
-            <ThemedText
-              type="small"
-              themeColor="textSecondary"
-              accessibilityLabel={`Elapsed: ${formatTime(position)}`}
+            <Pressable
+              onPress={() => setTimeDisplayMode((m) => (m === 'chapter' ? 'book' : 'chapter'))}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Elapsed ${timeDisplayMode} time: ${formatTime(displayElapsed)}. Tap to toggle mode.`}
             >
-              {formatTime(position)}
-            </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {formatTime(displayElapsed)}
+              </ThemedText>
+            </Pressable>
             <ThemedText type="small" themeColor="textSecondary" style={styles.chapterProgressLabel}>
               {currentChapterIndex + 1}/{chapters.length}
             </ThemedText>
-            <ThemedText
-              type="small"
-              themeColor="textSecondary"
-              accessibilityLabel={`Remaining: ${formatTime(remaining)}`}
+            <Pressable
+              onPress={() => setTimeDisplayMode((m) => (m === 'chapter' ? 'book' : 'chapter'))}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Remaining ${timeDisplayMode} time: ${formatRemaining(displayRemaining, displayTotalDuration)}. Tap to toggle mode.`}
             >
-              {formatRemaining(remaining, bookDuration)}
-            </ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                {formatRemaining(displayRemaining, displayTotalDuration)}
+              </ThemedText>
+            </Pressable>
           </View>
 
           {/* Chapter progress strip */}
