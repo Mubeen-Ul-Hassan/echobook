@@ -87,19 +87,24 @@ export const usePlaybackStore = create<PlaybackState>((set, get) => ({
 
   setChapters: (chapters) => set({ chapters }),
 
-  setIsPlaying: (isPlaying) => set({ isPlaying }),
+  setIsPlaying: (isPlaying) => set((s) => (s.isPlaying === isPlaying ? s : { isPlaying })),
 
-  setIsLoaded: (isLoaded) => set({ isLoaded }),
+  setIsLoaded: (isLoaded) => set((s) => (s.isLoaded === isLoaded ? s : { isLoaded })),
 
-  setPosition: (position) => set({ position }),
+  setPosition: (position) => set((s) => (s.position === position ? s : { position })),
 
   setDuration: (duration) =>
-    set((state) => ({
-      duration,
-      currentBook: state.currentBook ? { ...state.currentBook, duration } : null,
-    })),
+    set((state) => {
+      if (state.duration === duration && state.currentBook?.duration === duration) {
+        return state;
+      }
+      return {
+        duration,
+        currentBook: state.currentBook ? { ...state.currentBook, duration } : null,
+      };
+    }),
 
-  setSpeed: (speed) => set({ speed }),
+  setSpeed: (speed) => set((s) => (s.speed === speed ? s : { speed })),
 
   startSleepTimer: (duration, timerType) =>
     set({

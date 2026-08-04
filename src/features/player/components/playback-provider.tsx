@@ -156,15 +156,21 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
       const realDuration = status.duration;
       if (realDuration && realDuration > 0) {
-        setDuration(realDuration);
+        const activeBook = usePlaybackStore.getState().currentBook;
+        if (usePlaybackStore.getState().duration !== realDuration || (activeBook && activeBook.duration <= 0)) {
+          setDuration(realDuration);
 
-        // If currentBook in state/DB had 0 duration, update DB and auto-segment chapters
-        if (currentBook && (!currentBook.duration || currentBook.duration <= 0)) {
-          dbService.updateAudiobookDuration(db, currentBook.id, realDuration).then(() => {
-            dbService.getChaptersByBookId(db, currentBook.id).then((refreshed) => {
-              if (refreshed.length > 0) setChapters(refreshed);
-            });
-          }).catch(console.warn);
+          // If currentBook in state/DB had 0 duration, update DB and auto-segment chapters
+          if (activeBook && (!activeBook.duration || activeBook.duration <= 0)) {
+            dbService
+              .updateAudiobookDuration(db, activeBook.id, realDuration)
+              .then(() => {
+                dbService.getChaptersByBookId(db, activeBook.id).then((refreshed) => {
+                  if (refreshed.length > 0) setChapters(refreshed);
+                });
+              })
+              .catch(console.warn);
+          }
         }
       }
     }
@@ -184,7 +190,6 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     status.currentTime,
     status.duration,
     status.error,
-    currentBook,
     db,
     setIsLoaded,
     setIsPlaying,
