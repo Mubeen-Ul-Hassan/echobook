@@ -42,6 +42,14 @@ export const dbService = {
     return await db.getFirstAsync<AudiobookRecord>('SELECT * FROM audiobooks WHERE id = ?;', [id]);
   },
 
+  async updateAudiobookCoverPath(db: SQLiteDatabase, bookId: string, coverPath: string): Promise<void> {
+    await db.runAsync('UPDATE audiobooks SET coverPath = ?, updatedAt = ? WHERE id = ?;', [
+      coverPath,
+      new Date().toISOString(),
+      bookId,
+    ]);
+  },
+
   async deleteAudiobook(db: SQLiteDatabase, id: string): Promise<void> {
     await db.runAsync('DELETE FROM audiobooks WHERE id = ?;', [id]);
   },
@@ -51,8 +59,6 @@ export const dbService = {
   async insertChapters(db: SQLiteDatabase, chapters: ChapterRecord[]): Promise<void> {
     if (chapters.length === 0) return;
     
-    // We can use a transaction or execute them in parallel/sequentially.
-    // For simplicity, we insert them one by one.
     for (const chapter of chapters) {
       await db.runAsync(
         `INSERT INTO chapters (id, bookId, title, startTime, endTime, duration, \`order\`)
@@ -70,47 +76,53 @@ export const dbService = {
     }
   },
 
+  async replaceBookChapters(db: SQLiteDatabase, bookId: string, chapters: ChapterRecord[]): Promise<void> {
+    await db.runAsync('DELETE FROM chapters WHERE bookId = ?;', [bookId]);
+    await this.insertChapters(db, chapters);
+  },
+
   async getChaptersByBookId(db: SQLiteDatabase, bookId: string): Promise<ChapterRecord[]> {
     const existing = await db.getAllAsync<ChapterRecord>(
       'SELECT * FROM chapters WHERE bookId = ? ORDER BY `order` ASC;',
       [bookId]
     );
 
-    if (existing.length === 1) {
-      const book = await db.getFirstAsync<AudiobookRecord>('SELECT * FROM audiobooks WHERE id = ?;', [bookId]);
-      if (book && book.duration > 600) {
-        // Auto-segment this single-chapter book into 15-min chapters
-        const SEGMENT_DURATION = 900;
-        const newChapters: ChapterRecord[] = [];
-        let currentTime = 0;
-        let idx = 0;
-
-        while (currentTime < book.duration) {
-          const nextTime = Math.min(book.duration, currentTime + SEGMENT_DURATION);
-          const remaining = book.duration - nextTime;
-          const finalEndTime = remaining < 120 ? book.duration : nextTime;
-
-          newChapters.push({
-            id: `${bookId}_ch_${idx}`,
-            bookId,
-            title: `Chapter ${idx + 1}`,
-            startTime: currentTime,
-            endTime: finalEndTime,
-            duration: finalEndTime - currentTime,
-            order: idx,
-          });
-
-          currentTime = finalEndTime;
-          idx++;
-        }
-
-        await db.runAsync('DELETE FROM chapters WHERE bookId = ?;', [bookId]);
-        await this.insertChapters(db, newChapters);
-        return newChapters;
-      }
+    if (existing.length > 0) {
+      return existing;
     }
 
-    return existing;
+    // If no chapters exist, check if book exists and auto-segment
+    const book = await db.getFirstAsync<AudiobookRecord>('SELECT * FROM audiobooks WHERE id = ?;', [bookId]);
+    if (book && book.duration > 0) {
+      const SEGMENT_DURATION = 900;
+      const newChapters: ChapterRecord[] = [];
+      let currentTime = 0;
+      let idx = 0;
+
+      while (currentTime < book.duration) {
+        const nextTime = Math.min(book.duration, currentTime + SEGMENT_DURATION);
+        const remaining = book.duration - nextTime;
+        const finalEndTime = remaining < 120 ? book.duration : nextTime;
+
+        newChapters.push({
+          id: `${bookId}_ch_${idx}`,
+          bookId,
+          title: `Chapter ${idx + 1}`,
+          startTime: currentTime,
+          endTime: finalEndTime,
+          duration: finalEndTime - currentTime,
+          order: idx,
+        });
+
+        currentTime = finalEndTime;
+        idx++;
+      }
+
+      await this.insertChapters(db, newChapters);
+      return newChapters;
+    }
+
+    return [];
   },
 
   // --- Playback Operations ---

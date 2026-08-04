@@ -32,6 +32,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@/hooks/use-theme';
 import { dbService } from '@/database/services';
+import { importService } from '@/features/import/services/import-service';
 import { AudiobookRecord, ChapterRecord, PlaybackRecord, BookmarkRecord } from '@/database/types';
 import { Spacing } from '@/constants/theme';
 import { usePlaybackStore } from '@/hooks/use-playback-store';
@@ -74,6 +75,17 @@ export default function BookDetailScreen() {
       setChapters(chaptersData);
       setPlayback(playbackData);
       setBookmarks(bookmarksData);
+
+      // Check if metadata (cover image / chapters) can be repaired/extracted asynchronously
+      if (bookData) {
+        importService
+          .repairOrRefreshBookMetadata(db, id)
+          .then(({ audiobook, chapters: refreshedChapters }) => {
+            if (audiobook) setBook(audiobook);
+            if (refreshedChapters.length > 0) setChapters(refreshedChapters);
+          })
+          .catch(console.warn);
+      }
 
       // Preload the audio file in the background so the player starts in < 150 ms
       if (bookData?.audioPath) {

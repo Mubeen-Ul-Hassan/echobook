@@ -11,6 +11,7 @@ import { useAudioPlayerStatus } from 'expo-audio';
 
 import { usePlaybackStore } from '@/hooks/use-playback-store';
 import { dbService } from '@/database/services';
+import { importService } from '@/features/import/services/import-service';
 import { AudiobookRecord, ChapterRecord } from '@/database/types';
 import {
   getAudioPlayer,
@@ -112,6 +113,12 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
             setCurrentBook(lastBook);
             setChapters(bookChapters);
             
+            // Asynchronously check and repair missing metadata (cover art/chapters)
+            importService.repairOrRefreshBookMetadata(db, lastBook.id).then(({ audiobook, chapters: refreshedChapters }) => {
+              if (audiobook) setCurrentBook(audiobook);
+              if (refreshedChapters.length > 0) setChapters(refreshedChapters);
+            }).catch(console.warn);
+
             const activeChapter = bookChapters.find(ch => ch.id === lastPlayback.chapterId) || bookChapters[0] || null;
             setCurrentChapter(activeChapter);
             setPosition(lastPlayback.position);
@@ -339,6 +346,16 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         await loadAudio(uri, startPosition, autoPlay);
         isLoadingNewBookRef.current = false;
       }
+
+      // Update store
+      setCurrentBook(book);
+      setChapters(bookChapters);
+
+      // Asynchronously repair missing cover art or chapters if needed
+      importService.repairOrRefreshBookMetadata(db, book.id).then(({ audiobook, chapters: refreshedChapters }) => {
+        if (audiobook) setCurrentBook(audiobook);
+        if (refreshedChapters.length > 0) setChapters(refreshedChapters);
+      }).catch(console.warn);
 
       // Update playback rate
       const savedSpeed = usePlaybackStore.getState().speed;

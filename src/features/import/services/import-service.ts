@@ -10,15 +10,12 @@ export const importService = {
   /**
    * Opens the system file picker to select audiobook files, parses their metadata/chapters,
    * copies them into persistent application storage, and records them in the database.
-   *
-   * Note: Import is intended for Android / iOS. Web browsers cannot reliably read large
-   * local M4B files via expo-file-system (FileReader fails on media blobs).
    */
   async pickAndImportAudiobooks(db: SQLiteDatabase): Promise<AudiobookRecord[] | null> {
     if (Platform.OS === 'web') {
       throw new Error(
         'Import works on Android or iOS only. Start the app with Expo Go on your phone ' +
-          '(npx expo start, then scan the QR code) — not in the browser.',
+          '(npx expo start, then scan the QR code) — not in the browser.'
       );
     }
 
@@ -27,7 +24,6 @@ export const importService = {
     }
 
     const pickerResult = await DocumentPicker.getDocumentAsync({
-      // Broaden types so Android file managers surface .m4b files reliably
       type: [
         'audio/*',
         'audio/mp4',
@@ -35,6 +31,8 @@ export const importService = {
         'audio/m4b',
         'audio/x-m4a',
         'audio/m4a',
+        'audio/mp3',
+        'audio/mpeg',
         'audio/aac',
         'video/mp4',
         'application/octet-stream',
@@ -49,11 +47,9 @@ export const importService = {
 
     const importedBooks: AudiobookRecord[] = [];
 
-    // Define storage directories inside the application's documents directory
     const audiobooksDir = `${FileSystem.documentDirectory}audiobooks/`;
     const coversDir = `${FileSystem.documentDirectory}covers/`;
 
-    // Ensure the persistent directories exist
     await FileSystem.makeDirectoryAsync(audiobooksDir, { intermediates: true });
     await FileSystem.makeDirectoryAsync(coversDir, { intermediates: true });
 
@@ -61,13 +57,13 @@ export const importService = {
       try {
         const bookId = 'book_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
         const fileExt = asset.name.substring(asset.name.lastIndexOf('.')) || '.m4b';
-        
+
         // Extract metadata & chapters from the picked file URI
         const parsedData = await parseM4bMetadata(asset.uri);
-        
-        // Save the cover image to a persistent file if present
+
+        // Save cover image to persistent storage if extracted
         let coverPath: string | null = null;
-        if (parsedData.coverBase64 && parsedData.coverType) {
+        if (parsedData.coverBase64) {
           const coverExt = parsedData.coverType === 'image/png' ? '.png' : '.jpg';
           coverPath = `${coversDir}${bookId}${coverExt}`;
           await FileSystem.writeAsStringAsync(coverPath, parsedData.coverBase64, {
@@ -75,7 +71,7 @@ export const importService = {
           });
         }
 
-        // Copy the audiobook file from the temporary cache directory to the persistent audiobooks directory
+        // Copy audiobook file to persistent audiobooks directory
         const audioDestPath = `${audiobooksDir}${bookId}${fileExt}`;
         await FileSystem.copyAsync({
           from: asset.uri,
@@ -104,10 +100,8 @@ export const importService = {
           updatedAt: nowIso,
         };
 
-        // Insert audiobook record into SQLite
         await dbService.insertAudiobook(db, audiobook);
 
-        // Map and insert chapter records
         const chapters: ChapterRecord[] = parsedData.chapters.map((ch, idx) => ({
           id: `${bookId}_ch_${idx}`,
           bookId: bookId,
@@ -119,7 +113,6 @@ export const importService = {
         }));
         await dbService.insertChapters(db, chapters);
 
-        // Set up default playback status
         const playback: PlaybackRecord = {
           bookId: bookId,
           chapterId: chapters[0]?.id || null,
@@ -137,5 +130,86 @@ export const importService = {
     }
 
     return importedBooks;
-  }
+  },
+
+  /**
+   * Re-parses an existing audiobook's audio file to extract cover artwork or chapters if missing.
+   */
+  async repairOrRefreshBookMetadata(
+    db: SQLiteDatabase,
+    bookId: string
+  ): Promise<{ audiobook: AudiobookRecord | null; chapters: ChapterRecord[] }> {
+    try {
+      const book = await dbService.getAudiobookById(db, bookId);
+      if (!book || !book.audioPath) {
+        return { audiobook: null, chapters: [] };
+      }
+
+      const existingChapters = await dbService.getChaptersByBookId(db, bookId);
+
+      // Check if cover file exists on disk
+      let needsCover = !book.coverPath;
+      if (book.coverPath) {
+        const coverInfo = await FileSystem.getInfoAsync(book.coverPath);
+        if (!coverInfo.exists) {
+          needsCover = true;
+        }
+      }
+
+      // Check if real chapters exist (more than 1 chapter or title doesn't match default "Chapter 1")
+      const isAutoSegmentedOnly =
+        existingChapters.length <= 1 ||
+        existingChapters.every((c) => /^Chapter \d+$/i.test(c.title));
+
+      if (!needsCover && !isAutoSegmentedOnly) {
+        return { audiobook: book, chapters: existingChapters };
+      }
+
+      const parsedData = await parseM4bMetadata(book.audioPath);
+      let updatedCoverPath = book.coverPath;
+
+      // Extract & Save Cover Image
+      if (needsCover && parsedData.coverBase64) {
+        const coversDir = `${FileSystem.documentDirectory}covers/`;
+        await FileSystem.makeDirectoryAsync(coversDir, { intermediates: true });
+        const coverExt = parsedData.coverType === 'image/png' ? '.png' : '.jpg';
+        updatedCoverPath = `${coversDir}${bookId}${coverExt}`;
+
+        await FileSystem.writeAsStringAsync(updatedCoverPath, parsedData.coverBase64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        await dbService.updateAudiobookCoverPath(db, bookId, updatedCoverPath);
+      }
+
+      // Replace Chapters if real embedded chapters were found
+      let finalChapters = existingChapters;
+      if (parsedData.chapters.length > 0) {
+        const hasRealTitlesOrMultiple =
+          parsedData.chapters.length > 1 ||
+          !/^Chapter \d+$/i.test(parsedData.chapters[0]?.title || '');
+
+        if (hasRealTitlesOrMultiple) {
+          const newChapters: ChapterRecord[] = parsedData.chapters.map((ch, idx) => ({
+            id: `${bookId}_ch_${idx}`,
+            bookId,
+            title: ch.title,
+            startTime: ch.startTime,
+            endTime: ch.endTime,
+            duration: ch.endTime - ch.startTime,
+            order: idx,
+          }));
+          await dbService.replaceBookChapters(db, bookId, newChapters);
+          finalChapters = newChapters;
+        }
+      }
+
+      const updatedBook = await dbService.getAudiobookById(db, bookId);
+      return { audiobook: updatedBook, chapters: finalChapters };
+    } catch (error) {
+      console.error('Failed to repair audiobook metadata:', error);
+      const book = await dbService.getAudiobookById(db, bookId);
+      const chapters = await dbService.getChaptersByBookId(db, bookId);
+      return { audiobook: book, chapters };
+    }
+  },
 };
