@@ -200,6 +200,7 @@ interface SeekBarProps {
   duration: number;
   chapterStart: number;
   chapterEnd: number;
+  mode: 'chapter' | 'book';
   onSeek: (seconds: number) => void;
   accentColor: string;
   trackColor: string;
@@ -210,6 +211,7 @@ function SeekBar({
   duration,
   chapterStart,
   chapterEnd,
+  mode,
   onSeek,
   accentColor,
   trackColor,
@@ -217,17 +219,24 @@ function SeekBar({
   const [isDragging, setIsDragging] = useState(false);
   const barXRef = useRef<number>(0);
 
+  const isChapterMode = mode === 'chapter';
+  const effectiveStart = isChapterMode ? chapterStart : 0;
+  const effectiveEnd = isChapterMode ? chapterEnd : duration;
+  const effectiveDuration = Math.max(1, effectiveEnd - effectiveStart);
+  const currentOffset = Math.max(0, Math.min(effectiveDuration, position - effectiveStart));
+  const currentRatio = currentOffset / effectiveDuration;
+
   // Reanimated shared value for smooth interpolation between 250ms updates
-  const progressSV = useSharedValue(duration > 0 ? position / duration : 0);
+  const progressSV = useSharedValue(currentRatio);
 
   useEffect(() => {
-    if (!isDragging && duration > 0) {
-      progressSV.value = withTiming(Math.min(1, Math.max(0, position / duration)), {
+    if (!isDragging && effectiveDuration > 0) {
+      progressSV.value = withTiming(Math.min(1, Math.max(0, currentRatio)), {
         duration: 240,
         easing: Easing.linear,
       });
     }
-  }, [position, duration, isDragging, progressSV]);
+  }, [currentRatio, effectiveDuration, isDragging, progressSV]);
 
   const fillStyle = useAnimatedStyle(() => ({
     width: progressSV.value * SEEK_BAR_WIDTH,
@@ -259,7 +268,7 @@ function SeekBar({
       onPanResponderRelease: (evt) => {
         const ratio = Math.min(1, Math.max(0, (evt.nativeEvent.pageX - barXRef.current) / SEEK_BAR_WIDTH));
         setIsDragging(false);
-        onSeek(ratio * duration);
+        onSeek(effectiveStart + ratio * effectiveDuration);
       },
       onPanResponderTerminate: () => {
         setIsDragging(false);
@@ -277,8 +286,8 @@ function SeekBar({
         });
       }}
       accessibilityRole="adjustable"
-      accessibilityLabel={`Progress: ${formatTime(position)} of ${formatTime(duration)}`}
-      accessibilityValue={{ min: 0, max: duration, now: Math.floor(position) }}
+      accessibilityLabel={`Progress: ${formatTime(currentOffset)} of ${formatTime(effectiveDuration)}`}
+      accessibilityValue={{ min: 0, max: effectiveDuration, now: Math.floor(currentOffset) }}
       accessibilityActions={[
         { name: 'increment', label: 'Skip forward 30 seconds' },
         { name: 'decrement', label: 'Skip back 30 seconds' },
@@ -287,13 +296,15 @@ function SeekBar({
     >
       {/* Track background */}
       <View style={[styles.seekTrack, { backgroundColor: trackColor }]}>
-        {/* Chapter range highlight */}
-        <View
-          style={[
-            styles.seekChapterRange,
-            { left: chapterStartPx, width: chapterWidthPx, backgroundColor: accentColor + '28' },
-          ]}
-        />
+        {!isChapterMode && (
+          /* Chapter range highlight when in Book mode */
+          <View
+            style={[
+              styles.seekChapterRange,
+              { left: chapterStartPx, width: chapterWidthPx, backgroundColor: accentColor + '28' },
+            ]}
+          />
+        )}
         {/* Progress fill – driven by Reanimated shared value */}
         <Animated.View style={[styles.seekFill, { backgroundColor: accentColor }, fillStyle]} />
       </View>
@@ -703,6 +714,7 @@ export default function PlayerScreen() {
             duration={bookDuration}
             chapterStart={chapterStart}
             chapterEnd={chapterEnd}
+            mode={timeDisplayMode}
             onSeek={seekTo}
             accentColor={theme.accent}
             trackColor={theme.backgroundElement}
@@ -733,19 +745,6 @@ export default function PlayerScreen() {
               </ThemedText>
             </Pressable>
           </View>
-
-          {/* Chapter progress strip */}
-          <View style={[styles.chapterSeekBg, { backgroundColor: theme.backgroundElement }]}>
-            <View
-              style={[
-                styles.chapterSeekFill,
-                { backgroundColor: theme.accent + '66', width: `${chapterProgress * 100}%` },
-              ]}
-            />
-          </View>
-          <ThemedText type="small" themeColor="textSecondary" style={styles.chapterLabel}>
-            {currentChapter?.title ?? ''}
-          </ThemedText>
         </Animated.View>
 
         {/* ── Playback Controls ── */}
@@ -1154,9 +1153,6 @@ const styles = StyleSheet.create({
     marginTop: 2, marginBottom: Spacing.two,
   },
   chapterProgressLabel: { fontSize: 11 },
-  chapterSeekBg: { height: 2, borderRadius: 1, overflow: 'hidden', marginTop: 2 },
-  chapterSeekFill: { height: '100%', borderRadius: 1 },
-  chapterLabel: { textAlign: 'center', marginTop: 4, fontSize: 12 },
 
   // Controls
   controls: {
