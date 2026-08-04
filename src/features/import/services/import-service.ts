@@ -37,7 +37,7 @@ export const importService = {
         'video/mp4',
         'application/octet-stream',
       ],
-      copyToCacheDirectory: true,
+      copyToCacheDirectory: false,
       multiple: true,
     });
 
