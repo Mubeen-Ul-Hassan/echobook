@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
+import Svg, { Path, Text as SvgText } from 'react-native-svg';
 import { useSQLiteContext } from 'expo-sqlite';
 import {
   ChevronDown,
@@ -19,8 +20,6 @@ import {
   SkipForward,
   Play,
   Pause,
-  RotateCcw,
-  RotateCw,
   Bookmark,
   Timer,
   Music,
@@ -92,6 +91,66 @@ function formatDuration(seconds: number): string {
   const m = Math.floor((seconds % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;
   return `${m}m`;
+}
+
+function SkipBackIcon({ size = 36, color = '#FFF', seconds = 30 }: { size?: number; color?: string; seconds?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3.5 9.5C4.8 5.7 8.4 3 12.5 3C17.7 3 22 7.3 22 12.5C22 17.7 17.7 22 12.5 22C8.1 22 4.3 19 3.2 15"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <Path
+        d="M3.5 4.5V9.5H8.5"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <SvgText
+        x="12.2"
+        y="15.5"
+        fontSize="8"
+        fontWeight="800"
+        fill={color}
+        textAnchor="middle"
+      >
+        {seconds}
+      </SvgText>
+    </Svg>
+  );
+}
+
+function SkipForwardIcon({ size = 36, color = '#FFF', seconds = 30 }: { size?: number; color?: string; seconds?: number }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M20.5 9.5C19.2 5.7 15.6 3 11.5 3C6.3 3 2 7.3 2 12.5C2 17.7 6.3 22 11.5 22C15.9 22 19.7 19 20.8 15"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <Path
+        d="M20.5 4.5V9.5H15.5"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <SvgText
+        x="11.8"
+        y="15.5"
+        fontSize="8"
+        fontWeight="800"
+        fill={color}
+        textAnchor="middle"
+      >
+        {seconds}
+      </SvgText>
+    </Svg>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -715,8 +774,7 @@ export default function PlayerScreen() {
             accessibilityRole="button"
             accessibilityLabel="Skip back 30 seconds"
           >
-            <RotateCcw size={26} color={theme.text} />
-            <ThemedText style={styles.skipLabel}>30</ThemedText>
+            <SkipBackIcon size={38} color={theme.text} seconds={30} />
           </Pressable>
 
           {/* Play / Pause – animated ripple */}
@@ -745,8 +803,7 @@ export default function PlayerScreen() {
             accessibilityRole="button"
             accessibilityLabel="Skip forward 30 seconds"
           >
-            <RotateCw size={26} color={theme.text} />
-            <ThemedText style={styles.skipLabel}>30</ThemedText>
+            <SkipForwardIcon size={38} color={theme.text} seconds={30} />
           </Pressable>
 
           {/* Next chapter */}
@@ -1103,22 +1160,14 @@ const styles = StyleSheet.create({
 
   // Controls
   controls: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
-    paddingHorizontal: Spacing.two, paddingVertical: Spacing.three,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.four, paddingVertical: Spacing.three,
   },
   controlBtn: {
-    alignItems: 'center', justifyContent: 'center', position: 'relative',
-    width: 52, height: 52,
-  },
-  skipLabel: {
-    position: 'absolute',
-    fontSize: 8.5,
-    fontWeight: '800',
-    top: '50%',
-    left: 0,
-    right: 0,
-    marginTop: -5.5,
-    textAlign: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 48,
+    height: 48,
   },
   playBtn: {
     width: 72, height: 72, borderRadius: 36,
