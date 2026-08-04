@@ -67,12 +67,13 @@ export function MiniPlayer() {
 
   return (
     <Animated.View
-      entering={FadeInDown.springify().damping(16).stiffness(120)}
+      entering={FadeInDown.springify().damping(18).stiffness(140)}
       exiting={FadeOutDown.duration(200)}
       style={[
         styles.container,
         {
           backgroundColor: theme.backgroundElement,
+          borderColor: theme.border,
           bottom: BottomTabInset + Spacing.two,
         },
       ]}
@@ -93,7 +94,7 @@ export function MiniPlayer() {
           />
         ) : (
           <View style={[styles.cover, { backgroundColor: theme.backgroundSelected }]}>
-            <Music size={18} color={theme.textSecondary} />
+            <Music size={18} color={theme.accent} />
           </View>
         )}
 
@@ -108,34 +109,40 @@ export function MiniPlayer() {
           </ThemedText>
         </View>
 
-        {/* Play / Pause */}
-        <Pressable
-          onPress={isPlaying ? pause : play}
-          hitSlop={12}
-          style={({ pressed }) => [styles.playBtn, { opacity: pressed ? 0.6 : 1 }]}
-          accessibilityRole="button"
-          accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
-        >
-          {isPlaying ? (
-            <Pause size={22} color={theme.accent} fill={theme.accent} />
-          ) : (
-            <Play size={22} color={theme.accent} fill={theme.accent} style={{ marginLeft: 2 }} />
-          )}
-        </Pressable>
+        {/* Controls Container */}
+        <View style={styles.controlsRow}>
+          {/* Play / Pause */}
+          <Pressable
+            onPress={isPlaying ? pause : play}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.playBtn,
+              { backgroundColor: theme.accent, opacity: pressed ? 0.8 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying ? (
+              <Pause size={18} color="#000000" fill="#000000" />
+            ) : (
+              <Play size={18} color="#000000" fill="#000000" style={{ marginLeft: 2 }} />
+            )}
+          </Pressable>
 
-        {/* Dismiss */}
-        <Pressable
-          onPress={resetPlayback}
-          hitSlop={12}
-          style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.6 : 1 }]}
-          accessibilityRole="button"
-          accessibilityLabel="Stop and dismiss player"
-        >
-          <X size={16} color={theme.textSecondary} />
-        </Pressable>
+          {/* Dismiss */}
+          <Pressable
+            onPress={resetPlayback}
+            hitSlop={12}
+            style={({ pressed }) => [styles.closeBtn, { opacity: pressed ? 0.6 : 1 }]}
+            accessibilityRole="button"
+            accessibilityLabel="Stop and dismiss player"
+          >
+            <X size={16} color={theme.textSecondary} />
+          </Pressable>
+        </View>
       </Pressable>
 
-      {/* Progress strip */}
+      {/* Audible Progress strip */}
       <View style={[styles.progressTrack, { backgroundColor: theme.backgroundSelected }]}>
         <Animated.View style={[styles.progressFill, { backgroundColor: theme.accent }, progressStyle]} />
       </View>
@@ -149,48 +156,63 @@ const styles = StyleSheet.create({
     left: Spacing.three,
     right: Spacing.three,
     borderRadius: 16,
+    borderWidth: 1,
     overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 12,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 14,
     zIndex: 100,
   },
   body: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.two + 4,
-    paddingVertical: Spacing.two,
-    gap: Spacing.two,
+    paddingVertical: Spacing.two + 2,
+    gap: Spacing.two + 2,
   },
   cover: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
+    width: 44,
+    height: 44,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
-  info: { flex: 1 },
-  chapterText: { fontSize: 14, fontWeight: '600' },
+  info: { flex: 1, justifyContent: 'center' },
+  chapterText: { fontSize: 14, fontWeight: '700', letterSpacing: -0.1 },
+  controlsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   playBtn: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#F7991C',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
   },
   closeBtn: {
-    width: 30,
-    height: 30,
+    width: 28,
+    height: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },
   progressTrack: {
-    height: 2,
-    marginHorizontal: 4,
+    height: 3,
+    width: '100%',
   },
   progressFill: {
     height: '100%',
-    borderRadius: 1,
+    borderRadius: 1.5,
   },
 });

@@ -67,26 +67,44 @@ export const dbService = {
   async insertChapters(db: SQLiteDatabase, chapters: ChapterRecord[]): Promise<void> {
     if (chapters.length === 0) return;
     
-    for (const chapter of chapters) {
-      await db.runAsync(
-        `INSERT INTO chapters (id, bookId, title, startTime, endTime, duration, \`order\`)
-         VALUES (?, ?, ?, ?, ?, ?, ?);`,
-        [
-          chapter.id,
-          chapter.bookId,
-          chapter.title,
-          chapter.startTime,
-          chapter.endTime,
-          chapter.duration,
-          chapter.order,
-        ]
-      );
-    }
+    await db.withTransactionAsync(async () => {
+      for (const chapter of chapters) {
+        await db.runAsync(
+          `INSERT INTO chapters (id, bookId, title, startTime, endTime, duration, \`order\`)
+           VALUES (?, ?, ?, ?, ?, ?, ?);`,
+          [
+            chapter.id,
+            chapter.bookId,
+            chapter.title,
+            chapter.startTime,
+            chapter.endTime,
+            chapter.duration,
+            chapter.order,
+          ]
+        );
+      }
+    });
   },
 
   async replaceBookChapters(db: SQLiteDatabase, bookId: string, chapters: ChapterRecord[]): Promise<void> {
-    await db.runAsync('DELETE FROM chapters WHERE bookId = ?;', [bookId]);
-    await this.insertChapters(db, chapters);
+    await db.withTransactionAsync(async () => {
+      await db.runAsync('DELETE FROM chapters WHERE bookId = ?;', [bookId]);
+      for (const chapter of chapters) {
+        await db.runAsync(
+          `INSERT INTO chapters (id, bookId, title, startTime, endTime, duration, \`order\`)
+           VALUES (?, ?, ?, ?, ?, ?, ?);`,
+          [
+            chapter.id,
+            chapter.bookId,
+            chapter.title,
+            chapter.startTime,
+            chapter.endTime,
+            chapter.duration,
+            chapter.order,
+          ]
+        );
+      }
+    });
   },
 
   async getChaptersByBookId(db: SQLiteDatabase, bookId: string): Promise<ChapterRecord[]> {
@@ -134,6 +152,10 @@ export const dbService = {
   },
 
   // --- Playback Operations ---
+
+  async getAllPlaybacks(db: SQLiteDatabase): Promise<PlaybackRecord[]> {
+    return await db.getAllAsync<PlaybackRecord>('SELECT * FROM playbacks;');
+  },
 
   async getPlayback(db: SQLiteDatabase, bookId: string): Promise<PlaybackRecord | null> {
     return await db.getFirstAsync<PlaybackRecord>('SELECT * FROM playbacks WHERE bookId = ?;', [bookId]);

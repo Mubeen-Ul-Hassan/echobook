@@ -9,20 +9,28 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
-    accent: '#FF7A00',
+    text: '#0F172A',
+    background: '#F8F9FA',
+    backgroundElement: '#FFFFFF',
+    backgroundSelected: '#F1F3F5',
+    textSecondary: '#64748B',
+    accent: '#F7991C', // Audible Signature Amber Gold
+    accentHover: '#E08816',
+    border: '#E5E7EB',
+    card: '#FFFFFF',
+    success: '#10B981',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
-    accent: '#FF7A00',
+    text: '#FFFFFF',
+    background: '#121214', // Audible Deep Charcoal Background
+    backgroundElement: '#1C1C1E', // Elevated Card Surface
+    backgroundSelected: '#2C2C30', // Active/Selected Surface
+    textSecondary: '#9CA3AF',
+    accent: '#F7991C', // Audible Signature Amber Gold
+    accentHover: '#E08816',
+    border: '#2E2E34',
+    card: '#1C1C1E',
+    success: '#10B981',
   },
 } as const;
 

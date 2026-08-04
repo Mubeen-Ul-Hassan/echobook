@@ -76,11 +76,11 @@ export default function HomeScreen() {
       const allBooks = await dbService.getAudiobooks(db);
       setBooks(allBooks);
 
-      // Fetch all playback states to build progress map
+      // Fetch all playback states in a single batch query
+      const allPlaybacks = await dbService.getAllPlaybacks(db);
       const pbMap: Record<string, PlaybackRecord> = {};
-      for (const book of allBooks) {
-        const pb = await dbService.getPlayback(db, book.id);
-        if (pb) pbMap[book.id] = pb;
+      for (const pb of allPlaybacks) {
+        pbMap[pb.bookId] = pb;
       }
       setPlaybacksMap(pbMap);
 
@@ -298,7 +298,12 @@ export default function HomeScreen() {
               onPress={() => handleStartBook(recentPlayback.bookId)}
               style={({ pressed }) => [
                 styles.continueCard,
-                { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.92 : 1 },
+                {
+                  backgroundColor: theme.backgroundElement,
+                  borderColor: theme.border,
+                  borderWidth: 1,
+                  opacity: pressed ? 0.92 : 1,
+                },
               ]}
               accessibilityRole="button"
               accessibilityLabel={`Continue listening to ${recentPlayback.title}`}

@@ -20,7 +20,6 @@ import {
   getCurrentUri,
   setCurrentUri,
 } from '../services/audio-service';
-import { usePlaybackStore as useStore } from '@/hooks/use-playback-store';
 
 // ---------------------------------------------------------------------------
 // Context – exposes playback controls to the entire app
@@ -202,7 +201,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   // iOS: if media services reset (daemon crash), attempt to recover automatically
   useEffect(() => {
     if ((status as { mediaServicesDidReset?: boolean }).mediaServicesDidReset) {
-      const { currentBook: book, position: pos } = useStore.getState();
+      const { currentBook: book, position: pos } = usePlaybackStore.getState();
       if (book) {
         loadAudio(book.audioPath, pos, false).catch(console.warn);
       }
