@@ -1103,8 +1103,8 @@ const styles = StyleSheet.create({
 
   // Controls
   controls: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.four, paddingVertical: Spacing.three,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around',
+    paddingHorizontal: Spacing.two, paddingVertical: Spacing.three,
   },
   controlBtn: {
     alignItems: 'center', justifyContent: 'center', position: 'relative',
@@ -1112,11 +1112,12 @@ const styles = StyleSheet.create({
   },
   skipLabel: {
     position: 'absolute',
-    fontSize: 9,
+    fontSize: 8.5,
     fontWeight: '800',
-    top: 20,
+    top: '50%',
     left: 0,
     right: 0,
+    marginTop: -5.5,
     textAlign: 'center',
   },
   playBtn: {
