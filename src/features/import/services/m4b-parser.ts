@@ -281,7 +281,7 @@ async function parseChplBox(
   headerSize: number
 ): Promise<Omit<ParsedChapter, 'endTime'>[]> {
   try {
-    const bytes = await readBytesAt(fileUri, position + headerSize, Math.min(size - headerSize, 65536));
+    const bytes = await readBytesAt(fileUri, position + headerSize, Math.min(size - headerSize, 2097152));
     if (bytes.length < 8) return [];
     const reader = new BinaryReader(bytes);
 
@@ -315,6 +315,12 @@ async function parseChplBox(
   } catch {
     return [];
   }
+}
+
+interface StscEntry {
+  firstChunk: number;
+  samplesPerChunk: number;
+  sampleDescriptionIndex: number;
 }
 
 async function parseQuickTimeChapters(
@@ -415,13 +421,11 @@ async function parseQuickTimeChapters(
     if (!targetTrack) return [];
 
     // Parse the chapter track's sample table
-    const trakEnd = targetTrack.position + targetTrack.size;
-    let subPos = targetTrack.position + targetTrack.headerSize;
-
     let timescale = 1000;
     const sampleDeltas: number[] = [];
     const sampleSizes: number[] = [];
     const chunkOffsets: number[] = [];
+    const stscEntries: StscEntry[] = [];
 
     async function findAndParseStbl(containerPos: number, containerSize: number, containerHeaderSize: number) {
       const end = containerPos + containerSize;
@@ -446,7 +450,7 @@ async function parseQuickTimeChapters(
             }
           }
         } else if (h.type === 'stts') {
-          const sttsBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 8192));
+          const sttsBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
           if (sttsBytes.length >= 8) {
             const r = new BinaryReader(sttsBytes);
             r.skip(4); // version & flags
@@ -461,7 +465,7 @@ async function parseQuickTimeChapters(
             }
           }
         } else if (h.type === 'stsz') {
-          const stszBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 32768));
+          const stszBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
           if (stszBytes.length >= 12) {
             const r = new BinaryReader(stszBytes);
             r.skip(4); // version & flags
@@ -476,8 +480,22 @@ async function parseQuickTimeChapters(
               }
             }
           }
+        } else if (h.type === 'stsc') {
+          const stscBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
+          if (stscBytes.length >= 8) {
+            const r = new BinaryReader(stscBytes);
+            r.skip(4); // version & flags
+            const count = r.readUint32();
+            for (let i = 0; i < count; i++) {
+              if (!r.hasRemaining(12)) break;
+              const firstChunk = r.readUint32();
+              const samplesPerChunk = r.readUint32();
+              const sampleDescriptionIndex = r.readUint32();
+              stscEntries.push({ firstChunk, samplesPerChunk, sampleDescriptionIndex });
+            }
+          }
         } else if (h.type === 'stco') {
-          const stcoBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 32768));
+          const stcoBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
           if (stcoBytes.length >= 8) {
             const r = new BinaryReader(stcoBytes);
             r.skip(4);
@@ -488,7 +506,7 @@ async function parseQuickTimeChapters(
             }
           }
         } else if (h.type === 'co64') {
-          const co64Bytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 32768));
+          const co64Bytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
           if (co64Bytes.length >= 8) {
             const r = new BinaryReader(co64Bytes);
             r.skip(4);
@@ -507,30 +525,54 @@ async function parseQuickTimeChapters(
 
     await findAndParseStbl(targetTrack.position, targetTrack.size, targetTrack.headerSize);
 
-    if (sampleDeltas.length === 0 || chunkOffsets.length === 0 || timescale <= 0) return [];
+    // Build sampleOffsets using stsc mapping
+    const sampleOffsets: number[] = [];
+    let currentSampleIndex = 0;
+
+    for (let chunkIdx = 0; chunkIdx < chunkOffsets.length; chunkIdx++) {
+      const chunkNumber = chunkIdx + 1;
+      let samplesInThisChunk = 1;
+
+      for (let s = stscEntries.length - 1; s >= 0; s--) {
+        if (chunkNumber >= stscEntries[s].firstChunk) {
+          samplesInThisChunk = stscEntries[s].samplesPerChunk;
+          break;
+        }
+      }
+
+      let currentOffsetInChunk = chunkOffsets[chunkIdx];
+      for (let sInChunk = 0; sInChunk < samplesInThisChunk; sInChunk++) {
+        sampleOffsets.push(currentOffsetInChunk);
+        const sz = sampleSizes[currentSampleIndex] ?? sampleSizes[0] ?? 64;
+        currentOffsetInChunk += sz;
+        currentSampleIndex++;
+      }
+    }
+
+    if (sampleDeltas.length === 0 || sampleOffsets.length === 0 || timescale <= 0) return [];
 
     const chapters: ParsedChapter[] = [];
     let currentTimeUnits = 0;
+    const totalSamples = Math.min(sampleDeltas.length, sampleOffsets.length);
 
-    for (let i = 0; i < Math.min(sampleDeltas.length, chunkOffsets.length); i++) {
+    for (let i = 0; i < totalSamples; i++) {
       const startTime = currentTimeUnits / timescale;
       const durationUnits = sampleDeltas[i];
       currentTimeUnits += durationUnits;
       const endTime = currentTimeUnits / timescale;
 
-      const offset = chunkOffsets[i];
+      const offset = sampleOffsets[i];
       const sz = sampleSizes[i] || 64;
 
       let title = `Chapter ${i + 1}`;
       if (sz > 2) {
-        const sampleBytes = await readBytesAt(fileUri, offset, sz);
+        const sampleBytes = await readBytesAt(fileUri, offset, Math.min(sz, 4096));
         if (sampleBytes.length > 2) {
           const r = new BinaryReader(sampleBytes);
           const strLen = r.readUint16();
           if (strLen > 0 && strLen <= sampleBytes.length - 2) {
             title = r.readUtf8String(strLen);
           } else {
-            // Raw string
             r.offset = 0;
             title = r.readUtf8String(sampleBytes.length);
           }
@@ -548,35 +590,28 @@ async function parseQuickTimeChapters(
 
 // --- Searching Metadata & Artwork in MP4 ---
 
-async function searchIlstInMoov(
+async function searchAtomInMoov(
   fileUri: string,
   startPos: number,
   size: number,
   headerSize: number,
+  targetType: string,
   depth: number = 0
-): Promise<{ position: number; size: number; headerSize: number } | null> {
+): Promise<AtomHeader | null> {
   if (depth > 5) return null;
   const end = startPos + size;
   let pos = startPos + headerSize;
-
-  // If meta box, skip 4-byte version/flags header
-  if (depth > 0 && pos + 4 <= end) {
-    const testHead = await readAtomHeader(fileUri, pos);
-    if (!testHead || testHead.size > size) {
-      pos += 4;
-    }
-  }
 
   while (pos < end) {
     const header = await readAtomHeader(fileUri, pos);
     if (!header || header.size === 0 || header.size > end - pos) break;
 
-    if (header.type === 'ilst') {
-      return { position: pos, size: header.size, headerSize: header.headerSize };
+    if (header.type === targetType) {
+      return { ...header, position: pos };
     }
 
-    if (['udta', 'meta', 'moov'].includes(header.type)) {
-      const res = await searchIlstInMoov(fileUri, pos, header.size, header.headerSize, depth + 1);
+    if (['udta', 'meta', 'moov', 'trak'].includes(header.type)) {
+      const res = await searchAtomInMoov(fileUri, pos, header.size, header.headerSize, targetType, depth + 1);
       if (res) return res;
     }
 
@@ -589,7 +624,6 @@ async function searchIlstInMoov(
 
 async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null> {
   try {
-    // Read first 10 bytes for ID3 header
     const headerBytes = await readBytesAt(fileUri, 0, 10);
     if (headerBytes.length < 10) return null;
 
@@ -601,15 +635,14 @@ async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null
       return null;
     }
 
-    const versionMajor = headerBytes[3]; // 2, 3, or 4
+    const versionMajor = headerBytes[3];
     const rHeader = new BinaryReader(headerBytes);
     rHeader.skip(6);
     const tagSize = rHeader.readSynchsafeUint32();
 
     if (tagSize <= 0) return null;
 
-    // Read full ID3v2 tag (capped at 1MB)
-    const tagBytes = await readBytesAt(fileUri, 10, Math.min(tagSize, 1048576));
+    const tagBytes = await readBytesAt(fileUri, 10, Math.min(tagSize, 2097152));
     if (tagBytes.length === 0) return null;
 
     const reader = new BinaryReader(tagBytes);
@@ -665,10 +698,8 @@ async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null
           mimeType = frameReader.readLatin1String(64) || 'image/jpeg';
         }
 
-        const pictureType = frameReader.readUint8(); // 3 = front cover
-        // Skip description string
+        frameReader.readUint8(); // picture type
         if (encoding === 1 || encoding === 2) {
-          // UTF-16 double null
           while (frameReader.hasRemaining(2)) {
             const u1 = frameReader.readUint8();
             const u2 = frameReader.readUint8();
@@ -689,19 +720,18 @@ async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null
       }
       // Extract Chapter Frames (CHAP)
       else if (frameId === 'CHAP') {
-        const elementId = frameReader.readLatin1String(64);
+        frameReader.readLatin1String(64); // elementId
         const startTimeMs = frameReader.readUint32();
         const endTimeMs = frameReader.readUint32();
         frameReader.skip(8); // start & end byte offsets
 
         let chapterTitle = `Chapter ${chapterList.length + 1}`;
 
-        // Parse sub-frames (e.g. TIT2)
         while (frameReader.hasRemaining(10)) {
           const subId = frameReader.readLatin1String(4);
           if (!subId || subId.charCodeAt(0) === 0) break;
           const subSize = versionMajor === 4 ? frameReader.readSynchsafeUint32() : frameReader.readUint32();
-          frameReader.skip(2); // flags
+          frameReader.skip(2);
           if (subSize <= 0 || !frameReader.hasRemaining(subSize)) break;
 
           const subBytes = frameReader.getBytes(subSize);
@@ -817,7 +847,7 @@ export async function parseM4bMetadata(fileUri: string): Promise<ParsedM4bData> 
     }
 
     if (moovHeader) {
-      const moovPosition = (moovHeader as any).position ?? pos;
+      const moovPosition = moovHeader.position ?? pos;
 
       // Extract Duration from mvhd
       const moovEnd = moovPosition + moovHeader.size;
@@ -832,8 +862,8 @@ export async function parseM4bMetadata(fileUri: string): Promise<ParsedM4bData> 
           if (mvhdBytes.length >= 20) {
             const version = mvhdBytes[0];
             const r = new BinaryReader(mvhdBytes);
-            r.skip(1); // version
-            r.skip(3); // flags
+            r.skip(1);
+            r.skip(3);
             if (version === 1) {
               r.skip(16);
               const timescale = r.readUint32();
@@ -863,15 +893,49 @@ export async function parseM4bMetadata(fileUri: string): Promise<ParsedM4bData> 
         }
       }
 
-      // Search for Nero chpl chapters & iTunes ilst metadata/cover
-      const ilstHeader = await searchIlstInMoov(
+      // Nero chpl chapter extraction fallback
+      if (result.chapters.length === 0) {
+        const chplHeader = await searchAtomInMoov(
+          fileUri,
+          moovPosition,
+          moovHeader.size,
+          moovHeader.headerSize,
+          'chpl'
+        );
+        if (chplHeader && chplHeader.position !== undefined) {
+          const tempChapters = await parseChplBox(
+            fileUri,
+            chplHeader.position,
+            chplHeader.size,
+            chplHeader.headerSize
+          );
+          if (tempChapters.length > 0) {
+            const chapters: ParsedChapter[] = [];
+            for (let i = 0; i < tempChapters.length; i++) {
+              const endTime = i < tempChapters.length - 1
+                ? tempChapters[i + 1].startTime
+                : result.duration;
+              chapters.push({
+                title: tempChapters[i].title,
+                startTime: tempChapters[i].startTime,
+                endTime: Math.max(endTime, tempChapters[i].startTime + 1),
+              });
+            }
+            result.chapters = chapters;
+          }
+        }
+      }
+
+      // Search for iTunes ilst metadata & cover
+      const ilstHeader = await searchAtomInMoov(
         fileUri,
         moovPosition,
         moovHeader.size,
-        moovHeader.headerSize
+        moovHeader.headerSize,
+        'ilst'
       );
 
-      if (ilstHeader) {
+      if (ilstHeader && ilstHeader.position !== undefined) {
         const ilstEnd = ilstHeader.position + ilstHeader.size;
         let tagPos = ilstHeader.position + ilstHeader.headerSize;
 
@@ -890,7 +954,7 @@ export async function parseM4bMetadata(fileUri: string): Promise<ParsedM4bData> 
               const dataBytes = await readBytesAt(
                 fileUri,
                 subPos + subHeader.headerSize,
-                Math.min(subHeader.size - subHeader.headerSize, 524288)
+                Math.min(subHeader.size - subHeader.headerSize, 2097152)
               );
 
               if (dataBytes.length > 8) {
