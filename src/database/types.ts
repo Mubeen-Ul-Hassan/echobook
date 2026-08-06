@@ -2,6 +2,7 @@ export interface AudiobookRecord {
   id: string;
   title: string;
   author: string | null;
+  narrator: string | null;
   album: string | null;
   series: string | null;
   publisher: string | null;

@@ -11,6 +11,7 @@ export interface ParsedChapter {
 export interface ParsedM4bData {
   title: string;
   author: string | null;
+  narrator: string | null;
   album: string | null;
   description: string | null;
   genre: string | null;
@@ -669,6 +670,7 @@ async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null
     const result: ParsedM4bData = {
       title: '',
       author: null,
+      narrator: null,
       album: null,
       description: null,
       genre: null,
@@ -773,6 +775,9 @@ async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null
       } else if (['TPE1', 'TP1'].includes(frameId)) {
         frameReader.readUint8();
         result.author = frameReader.readUtf8String(framePayload.length - 1);
+      } else if (['TCOM', 'TEXT', 'TMC'].includes(frameId)) {
+        frameReader.readUint8();
+        result.narrator = frameReader.readUtf8String(framePayload.length - 1);
       } else if (['TALB', 'TAL'].includes(frameId)) {
         frameReader.readUint8();
         result.album = frameReader.readUtf8String(framePayload.length - 1);
@@ -813,6 +818,7 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
   const result: ParsedM4bData = {
     title: '',
     author: null,
+    narrator: null,
     album: null,
     description: null,
     genre: null,
@@ -1019,6 +1025,8 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
                     if (text) result.title = text;
                   } else if (['©ART', '©art', 'ART', 'art', 'ARTIST', 'artist'].includes(normKey) || key.includes('ART') || key.includes('art')) {
                     if (text) result.author = text;
+                  } else if (['©wrt', 'wrt', 'COMPOSER', 'composer', 'NARRATOR', 'narrator', '©nrt'].includes(normKey) || key.includes('wrt') || key.includes('nrt')) {
+                    if (text) result.narrator = text;
                   } else if (['©alb', '©ALB', 'alb', 'ALBUM', 'album'].includes(normKey) || key.includes('alb')) {
                     if (text) result.album = text;
                   } else if (['©des', 'desc', 'DESCRIPTION', 'description'].includes(normKey) || key.includes('des')) {

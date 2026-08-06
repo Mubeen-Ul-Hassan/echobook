@@ -83,6 +83,7 @@ export const importService = {
           id: bookId,
           title: parsedData.title,
           author: parsedData.author,
+          narrator: parsedData.narrator,
           album: parsedData.album,
           series: null,
           publisher: null,

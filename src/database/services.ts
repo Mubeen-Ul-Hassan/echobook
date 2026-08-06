@@ -7,14 +7,15 @@ export const dbService = {
   async insertAudiobook(db: SQLiteDatabase, book: AudiobookRecord): Promise<void> {
     await db.runAsync(
       `INSERT INTO audiobooks (
-        id, title, author, album, series, publisher, description, 
+        id, title, author, narrator, album, series, publisher, description, 
         language, genre, year, coverPath, audioPath, duration, 
         codec, bitrate, sampleRate, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       [
         book.id,
         book.title,
         book.author,
+        book.narrator ?? null,
         book.album,
         book.series,
         book.publisher,

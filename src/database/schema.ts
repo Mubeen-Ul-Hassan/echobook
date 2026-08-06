@@ -11,6 +11,7 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL,
       author TEXT,
+      narrator TEXT,
       album TEXT,
       series TEXT,
       publisher TEXT,
@@ -28,6 +29,12 @@ export async function migrateDbIfNeeded(db: SQLiteDatabase) {
       updatedAt TEXT NOT NULL
     );
   `);
+
+  try {
+    await db.execAsync(`ALTER TABLE audiobooks ADD COLUMN narrator TEXT;`);
+  } catch {
+    // Column already exists
+  }
 
   // Create Chapters table
   await db.execAsync(`
