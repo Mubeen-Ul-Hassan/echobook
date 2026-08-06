@@ -1,12 +1,29 @@
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { AudiobookRecord, ChapterRecord, PlaybackRecord, BookmarkRecord } from './types';
 
+/**
+ * Safely executes an async callback within a SQLite transaction.
+ * If a transaction is already active on the connection, executes the callback directly.
+ */
+async function runInTransaction(db: SQLiteDatabase, action: () => Promise<void>): Promise<void> {
+  try {
+    await db.withTransactionAsync(action);
+  } catch (err: any) {
+    const msg = err?.message || String(err);
+    if (msg.includes('cannot start a transaction')) {
+      await action();
+    } else {
+      throw err;
+    }
+  }
+}
+
 export const dbService = {
   // --- Audiobook Operations ---
   
   async insertAudiobook(db: SQLiteDatabase, book: AudiobookRecord): Promise<void> {
     await db.runAsync(
-      `INSERT INTO audiobooks (
+      `INSERT OR REPLACE INTO audiobooks (
         id, title, author, narrator, album, series, publisher, description, 
         language, genre, year, coverPath, audioPath, duration, 
         codec, bitrate, sampleRate, createdAt, updatedAt
@@ -59,6 +76,28 @@ export const dbService = {
     ]);
   },
 
+  /** Updates only the provided (non-undefined) metadata fields of an audiobook. */
+  async updateAudiobookMetadata(
+    db: SQLiteDatabase,
+    bookId: string,
+    fields: Partial<
+      Pick<
+        AudiobookRecord,
+        'title' | 'author' | 'narrator' | 'album' | 'description' | 'genre' | 'year' | 'duration' | 'coverPath'
+      >
+    >
+  ): Promise<void> {
+    const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
+    if (entries.length === 0) return;
+
+    const setClause = entries.map(([k]) => `${k} = ?`).join(', ');
+    const values = entries.map(([, v]) => v as string | number | null);
+    await db.runAsync(
+      `UPDATE audiobooks SET ${setClause}, updatedAt = ? WHERE id = ?;`,
+      [...values, new Date().toISOString(), bookId]
+    );
+  },
+
   async deleteAudiobook(db: SQLiteDatabase, id: string): Promise<void> {
     await db.runAsync('DELETE FROM audiobooks WHERE id = ?;', [id]);
   },
@@ -68,10 +107,10 @@ export const dbService = {
   async insertChapters(db: SQLiteDatabase, chapters: ChapterRecord[]): Promise<void> {
     if (chapters.length === 0) return;
     
-    await db.withTransactionAsync(async () => {
+    await runInTransaction(db, async () => {
       for (const chapter of chapters) {
         await db.runAsync(
-          `INSERT INTO chapters (id, bookId, title, startTime, endTime, duration, \`order\`)
+          `INSERT OR REPLACE INTO chapters (id, bookId, title, startTime, endTime, duration, \`order\`)
            VALUES (?, ?, ?, ?, ?, ?, ?);`,
           [
             chapter.id,
@@ -88,11 +127,11 @@ export const dbService = {
   },
 
   async replaceBookChapters(db: SQLiteDatabase, bookId: string, chapters: ChapterRecord[]): Promise<void> {
-    await db.withTransactionAsync(async () => {
+    await runInTransaction(db, async () => {
       await db.runAsync('DELETE FROM chapters WHERE bookId = ?;', [bookId]);
       for (const chapter of chapters) {
         await db.runAsync(
-          `INSERT INTO chapters (id, bookId, title, startTime, endTime, duration, \`order\`)
+          `INSERT OR REPLACE INTO chapters (id, bookId, title, startTime, endTime, duration, \`order\`)
            VALUES (?, ?, ?, ?, ?, ?, ?);`,
           [
             chapter.id,

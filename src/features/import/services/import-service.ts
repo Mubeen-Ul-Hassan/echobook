@@ -46,6 +46,7 @@ export const importService = {
     }
 
     const importedBooks: AudiobookRecord[] = [];
+    const importErrors: string[] = [];
 
     const audiobooksDir = `${FileSystem.documentDirectory}audiobooks/`;
     const coversDir = `${FileSystem.documentDirectory}covers/`;
@@ -54,12 +55,57 @@ export const importService = {
     await FileSystem.makeDirectoryAsync(coversDir, { intermediates: true });
 
     for (const asset of pickerResult.assets) {
+      let audioDestPath: string | null = null;
+      let coverPath: string | null = null;
+
       try {
         const bookId = 'book_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
         const fileExt = asset.name.substring(asset.name.lastIndexOf('.')) || '.m4b';
 
+        // Determine asset file size (from asset.size or getInfoAsync)
+        let assetSize = typeof asset.size === 'number' && asset.size > 0 ? asset.size : 0;
+        if (!assetSize && asset.uri) {
+          try {
+            const info = await FileSystem.getInfoAsync(asset.uri);
+            if (info.exists && typeof info.size === 'number' && info.size > 0) {
+              assetSize = info.size;
+            }
+          } catch (_) {
+            // Ignore if getInfoAsync fails on content URI
+          }
+        }
+
+        // Pre-check free disk space before starting expensive copyAsync
+        try {
+          const freeStorageBytes = await FileSystem.getFreeDiskStorageAsync();
+          if (assetSize > 0) {
+            const requiredBytes = assetSize + 10 * 1024 * 1024; // 10MB safety margin
+            if (freeStorageBytes < requiredBytes) {
+              const freeMB = (freeStorageBytes / (1024 * 1024)).toFixed(1);
+              const neededMB = (assetSize / (1024 * 1024)).toFixed(1);
+              throw new Error(
+                `Not enough storage space on device. Available: ${freeMB} MB, Required: ${neededMB} MB.`
+              );
+            }
+          } else if (freeStorageBytes < 50 * 1024 * 1024) {
+            // Safety fallback if size is completely unknown and free space is under 50MB
+            const freeMB = (freeStorageBytes / (1024 * 1024)).toFixed(1);
+            throw new Error(
+              `Device storage is almost full (only ${freeMB} MB free). Free up space to import audiobooks.`
+            );
+          }
+        } catch (storageErr: any) {
+          if (
+            storageErr?.message?.includes('Not enough storage space') ||
+            storageErr?.message?.includes('Device storage is almost full')
+          ) {
+            throw storageErr;
+          }
+          // Ignore if getFreeDiskStorageAsync is unsupported on platform
+        }
+
         // 1. Copy audiobook file to persistent audiobooks directory first
-        const audioDestPath = `${audiobooksDir}${bookId}${fileExt}`;
+        audioDestPath = `${audiobooksDir}${bookId}${fileExt}`;
         await FileSystem.copyAsync({
           from: asset.uri,
           to: audioDestPath,
@@ -69,7 +115,6 @@ export const importService = {
         const parsedData = await parseM4bMetadata(audioDestPath, asset.name);
 
         // 3. Save cover image to persistent storage if extracted
-        let coverPath: string | null = null;
         if (parsedData.coverBase64) {
           const coverExt = parsedData.coverType === 'image/png' ? '.png' : '.jpg';
           coverPath = `${coversDir}${bookId}${coverExt}`;
@@ -125,16 +170,43 @@ export const importService = {
         await dbService.savePlayback(db, playback);
 
         importedBooks.push(audiobook);
-      } catch (error) {
-        console.error(`Failed to import asset "${asset.name}":`, error);
+      } catch (error: any) {
+        // Clean up partial files if copy or processing failed mid-way
+        if (audioDestPath) {
+          await FileSystem.deleteAsync(audioDestPath, { idempotent: true }).catch(() => {});
+        }
+        if (coverPath) {
+          await FileSystem.deleteAsync(coverPath, { idempotent: true }).catch(() => {});
+        }
+
+        const rawMsg = error?.message || String(error);
+        let errorMsg = rawMsg;
+        if (rawMsg.includes('ENOSPC') || rawMsg.includes('No space left on device')) {
+          errorMsg = `Storage full: Not enough disk space on your device to copy "${asset.name}".`;
+        } else if (!rawMsg.startsWith('Not enough storage space') && !rawMsg.startsWith('Device storage is almost full')) {
+          errorMsg = `Failed to import "${asset.name}": ${rawMsg}`;
+        }
+
+        console.warn(errorMsg);
+        importErrors.push(errorMsg);
       }
+    }
+
+    if (importedBooks.length === 0 && importErrors.length > 0) {
+      throw new Error(importErrors.join('\n\n'));
     }
 
     return importedBooks;
   },
 
   /**
-   * Re-parses an existing audiobook's audio file to extract cover artwork or chapters if missing.
+   * Re-parses an existing audiobook's audio file to backfill any missing or broken
+   * metadata: chapters (if previously auto-segmented), cover artwork, author,
+   * narrator, album, description, genre, and year.
+   *
+   * The expensive full-file re-parse runs at most once per book per app session
+   * (see `repairedThisSession`) so opening a book repeatedly never causes
+   * repeated heavy JS work while audio is playing.
    */
   async repairOrRefreshBookMetadata(
     db: SQLiteDatabase,
@@ -147,6 +219,10 @@ export const importService = {
       }
 
       const existingChapters = await dbService.getChaptersByBookId(db, bookId);
+
+      if (repairedThisSession.has(bookId)) {
+        return { audiobook: book, chapters: existingChapters };
+      }
 
       // Check if cover file exists on disk
       let needsCover = !book.coverPath;
@@ -162,19 +238,23 @@ export const importService = {
         existingChapters.length > 1 &&
         existingChapters.every((c, idx) => Math.abs(c.startTime - idx * 900) < 2);
 
-      const isAutoSegmentedOnly =
+      const needsChapters =
         existingChapters.length <= 1 ||
         isAutoSegmented15Min ||
         existingChapters.every((c) => /^Chapter \d+$/i.test(c.title));
 
-      if (!needsCover && !isAutoSegmentedOnly) {
+      const needsTextMetadata = !book.author || !book.narrator || !book.description;
+
+      if (!needsCover && !needsChapters && !needsTextMetadata) {
+        repairedThisSession.add(bookId);
         return { audiobook: book, chapters: existingChapters };
       }
 
       const parsedData = await parseM4bMetadata(book.audioPath);
-      let updatedCoverPath = book.coverPath;
+      repairedThisSession.add(bookId);
 
       // Extract & Save Cover Image
+      let updatedCoverPath: string | undefined;
       if (needsCover && parsedData.coverBase64) {
         const coversDir = `${FileSystem.documentDirectory}covers/`;
         await FileSystem.makeDirectoryAsync(coversDir, { intermediates: true });
@@ -184,12 +264,34 @@ export const importService = {
         await FileSystem.writeAsStringAsync(updatedCoverPath, parsedData.coverBase64, {
           encoding: FileSystem.EncodingType.Base64,
         });
-        await dbService.updateAudiobookCoverPath(db, bookId, updatedCoverPath);
       }
 
-      // Replace Chapters if real embedded chapters were found
+      // Backfill any missing text metadata (never overwrite existing values,
+      // except a title that is clearly a filename fallback).
+      const hasRealParsedTitle =
+        !!parsedData.title &&
+        !parsedData.title.startsWith('content:') &&
+        !parsedData.title.startsWith('file:');
+
+      await dbService.updateAudiobookMetadata(db, bookId, {
+        title: !book.title && hasRealParsedTitle ? parsedData.title : undefined,
+        author: !book.author && parsedData.author ? parsedData.author : undefined,
+        narrator: !book.narrator && parsedData.narrator ? parsedData.narrator : undefined,
+        album: !book.album && parsedData.album ? parsedData.album : undefined,
+        description: !book.description && parsedData.description ? parsedData.description : undefined,
+        genre: !book.genre && parsedData.genre ? parsedData.genre : undefined,
+        year: !book.year && parsedData.year ? parsedData.year : undefined,
+        duration: book.duration <= 0 && parsedData.duration > 0 ? parsedData.duration : undefined,
+        coverPath: updatedCoverPath,
+      });
+
+      // Replace chapters only when the existing ones are broken/auto-segmented
+      // AND the fresh parse found something (real chapters have non-generic titles).
       let finalChapters = existingChapters;
-      if (parsedData.chapters.length > 0) {
+      const parsedHasRealChapters = parsedData.chapters.some(
+        (ch) => !/^Chapter \d+$/i.test(ch.title)
+      );
+      if (needsChapters && parsedData.chapters.length > 0 && (parsedHasRealChapters || existingChapters.length === 0)) {
         const newChapters: ChapterRecord[] = parsedData.chapters.map((ch, idx) => ({
           id: `${bookId}_ch_${idx}`,
           bookId,
@@ -213,3 +315,6 @@ export const importService = {
     }
   },
 };
+
+/** Books whose metadata has already been checked/repaired in this app session. */
+const repairedThisSession = new Set<string>();

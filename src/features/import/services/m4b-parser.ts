@@ -990,10 +990,12 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
             if (!subHeader || subHeader.size === 0 || subHeader.size > keyEnd - subPos) break;
 
             if (subHeader.type === 'data') {
+              // Cover art can legitimately be several MB; text tags stay small.
+              const maxRead = keyHeader.type === 'covr' ? 12582912 : 2097152;
               const dataBytes = await readBytesAt(
                 fileUri,
                 subPos + subHeader.headerSize,
-                Math.min(subHeader.size - subHeader.headerSize, 2097152)
+                Math.min(subHeader.size - subHeader.headerSize, maxRead)
               );
 
               if (dataBytes.length > 8) {

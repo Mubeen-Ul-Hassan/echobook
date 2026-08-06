@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
 } from 'react';
 import { AppState, AppStateStatus } from 'react-native';
@@ -91,8 +92,11 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const lastSavedPositionRef = useRef<number>(0);
   const prevPlayingRef = useRef<boolean>(false);
   const isLoadingNewBookRef = useRef<boolean>(false);
-  const isSeekingRef = useRef<boolean>(false);
-  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // While a seek is in flight the native player keeps reporting the *old*
+  // position for a few status ticks. We hold the UI position at the seek
+  // target until the player reports a time close to it (or a max hold time
+  // passes) — otherwise the progress bar visibly jumps backwards ("stuck").
+  const pendingSeekRef = useRef<{ target: number; startedAt: number } | null>(null);
 
   // ---------------------------------------------------------------------------
   // 1. Initialise audio session on mount and restore last session
@@ -150,49 +154,63 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     setIsPlaying(status.playing);
 
     if (status.isLoaded) {
-      if (!isSeekingRef.current) {
+      const pending = pendingSeekRef.current;
+      if (pending) {
+        const reachedTarget = Math.abs(status.currentTime - pending.target) < 2;
+        const timedOut = Date.now() - pending.startedAt > 3000;
+        if (reachedTarget || timedOut) {
+          pendingSeekRef.current = null;
+          setPosition(status.currentTime);
+        }
+        // else: stale pre-seek time — keep showing the seek target
+      } else {
         setPosition(status.currentTime);
       }
 
       const realDuration = status.duration;
-      if (realDuration && realDuration > 0) {
+      if (realDuration && realDuration > 0 && !isLoadingNewBookRef.current) {
         const activeBook = usePlaybackStore.getState().currentBook;
         const activeChapters = usePlaybackStore.getState().chapters;
 
-        const isBrokenChapters =
-          activeChapters.length === 0 ||
-          activeChapters.every((c) => c.endTime <= c.startTime || c.endTime <= 0) ||
-          (activeChapters.length === 1 && activeChapters[0].endTime < realDuration - 1);
-
-        if (
-          usePlaybackStore.getState().duration !== realDuration ||
-          (activeBook && activeBook.duration <= 0) ||
-          isBrokenChapters
-        ) {
+        if (usePlaybackStore.getState().duration !== realDuration) {
           setDuration(realDuration);
-
-          if (activeBook) {
+          if (activeBook && Math.abs(activeBook.duration - realDuration) > 1) {
             dbService.updateAudiobookDuration(db, activeBook.id, realDuration).catch(console.warn);
+          }
+        }
 
-            if (isBrokenChapters || activeBook.duration <= 0) {
-              const segmented = autoSegmentChapters(realDuration);
-              const newChapters: ChapterRecord[] = segmented.map((ch, idx) => ({
-                id: `${activeBook.id}_ch_${idx}`,
-                bookId: activeBook.id,
-                title: ch.title,
-                startTime: ch.startTime,
-                endTime: ch.endTime,
-                duration: ch.endTime - ch.startTime,
-                order: idx,
-              }));
+        // Last-resort re-segmentation: ONLY when chapters are clearly unusable
+        // (none at all, or all zero-length) or when the import-time fallback ran
+        // without knowing the duration (a single generic "Chapter N" stub whose
+        // end doesn't match the real duration). NEVER touch real named chapters.
+        if (activeBook) {
+          const allGenericTitles =
+            activeChapters.length > 0 && activeChapters.every((c) => /^Chapter \d+$/i.test(c.title));
+          const isBrokenChapters =
+            activeChapters.length === 0 ||
+            activeChapters.every((c) => c.endTime <= c.startTime || c.endTime <= 0) ||
+            (allGenericTitles &&
+              activeChapters.length === 1 &&
+              Math.abs(activeChapters[0].endTime - realDuration) > 60);
 
-              dbService.replaceBookChapters(db, activeBook.id, newChapters).then(() => {
-                setChapters(newChapters);
-                const curPos = status.currentTime;
-                const matchCh = newChapters.find((c) => curPos >= c.startTime && curPos < c.endTime) ?? newChapters[0];
-                if (matchCh) setCurrentChapter(matchCh);
-              }).catch(console.warn);
-            }
+          if (isBrokenChapters) {
+            const segmented = autoSegmentChapters(realDuration);
+            const newChapters: ChapterRecord[] = segmented.map((ch, idx) => ({
+              id: `${activeBook.id}_ch_${idx}`,
+              bookId: activeBook.id,
+              title: ch.title,
+              startTime: ch.startTime,
+              endTime: ch.endTime,
+              duration: ch.endTime - ch.startTime,
+              order: idx,
+            }));
+
+            dbService.replaceBookChapters(db, activeBook.id, newChapters).then(() => {
+              setChapters(newChapters);
+              const curPos = status.currentTime;
+              const matchCh = newChapters.find((c) => curPos >= c.startTime && curPos < c.endTime) ?? newChapters[0];
+              if (matchCh) setCurrentChapter(matchCh);
+            }).catch(console.warn);
           }
         }
       }
@@ -312,6 +330,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentChapter?.id, sleepTimerType, status.playing, player, clearSleepTimer]);
 
+  const lastDiskFullWarnRef = useRef<number>(0);
+
   // ---------------------------------------------------------------------------
   // 5. Auto-save playback position to SQLite
   //    - Every 5 s while playing
@@ -330,8 +350,20 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
           completed: 0,
         });
         lastSavedPositionRef.current = position;
-      } catch (err) {
-        console.warn('[PlaybackProvider] Failed to save position:', err);
+      } catch (err: any) {
+        const msg = err?.message || String(err);
+        const isDiskFull = msg.includes('database or disk is full') || msg.includes('ENOSPC');
+        const now = Date.now();
+
+        // Throttle disk full warnings to at most once per 60 seconds to avoid warning spam
+        if (!isDiskFull || now - lastDiskFullWarnRef.current > 60000) {
+          if (isDiskFull) {
+            lastDiskFullWarnRef.current = now;
+            console.warn('[PlaybackProvider] Unable to save playback position: Device storage is completely full.');
+          } else {
+            console.warn('[PlaybackProvider] Failed to save position:', err);
+          }
+        }
       }
     },
     [db, currentBook, currentChapter, speed],
@@ -411,11 +443,15 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       setCurrentBook(book);
       setChapters(bookChapters);
 
-      // Asynchronously repair missing cover art or chapters if needed
-      importService.repairOrRefreshBookMetadata(db, book.id).then(({ audiobook, chapters: refreshedChapters }) => {
-        if (audiobook) setCurrentBook(audiobook);
-        if (refreshedChapters.length > 0) setChapters(refreshedChapters);
-      }).catch(console.warn);
+      // Repair missing cover art / chapters / metadata if needed — deferred so
+      // the (potentially expensive) file re-parse never competes with audio
+      // startup or the player screen's entrance animations.
+      setTimeout(() => {
+        importService.repairOrRefreshBookMetadata(db, book.id).then(({ audiobook, chapters: refreshedChapters }) => {
+          if (audiobook) setCurrentBook(audiobook);
+          if (refreshedChapters.length > 0) setChapters(refreshedChapters);
+        }).catch(console.warn);
+      }, 1500);
 
       // Update playback rate
       const savedSpeed = usePlaybackStore.getState().speed;
@@ -470,13 +506,14 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
   const seekTo = useCallback(
     async (seconds: number): Promise<void> => {
-      isSeekingRef.current = true;
-      if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+      pendingSeekRef.current = { target: seconds, startedAt: Date.now() };
       setPosition(seconds);
-      await player.seekTo(seconds);
-      seekTimerRef.current = setTimeout(() => {
-        isSeekingRef.current = false;
-      }, 350);
+      try {
+        await player.seekTo(seconds);
+      } catch (err) {
+        pendingSeekRef.current = null;
+        console.warn('[PlaybackProvider] Seek failed:', err);
+      }
     },
     [player, setPosition],
   );
@@ -487,17 +524,17 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
         player.currentTime + seconds,
         currentBook?.duration ?? player.currentTime + seconds,
       );
-      await player.seekTo(target);
+      await seekTo(target);
     },
-    [player, currentBook],
+    [player, currentBook, seekTo],
   );
 
   const skipBackward = useCallback(
     async (seconds: number = 30): Promise<void> => {
       const target = Math.max(0, player.currentTime - seconds);
-      await player.seekTo(target);
+      await seekTo(target);
     },
-    [player],
+    [player, seekTo],
   );
 
   const nextChapter = useCallback(async (): Promise<void> => {
@@ -505,35 +542,35 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     const idx = chapters.findIndex((ch) => ch.id === currentChapter.id);
     const next = chapters[idx + 1];
     if (next) {
-      await player.seekTo(next.startTime);
+      await seekTo(next.startTime);
       setCurrentChapter(next);
       if (!player.playing) player.play();
     }
-  }, [player, currentChapter, chapters, setCurrentChapter]);
+  }, [player, currentChapter, chapters, setCurrentChapter, seekTo]);
 
   const prevChapter = useCallback(async (): Promise<void> => {
     if (!currentChapter || chapters.length === 0) return;
     const idx = chapters.findIndex((ch) => ch.id === currentChapter.id);
     // If more than 3 s into chapter → restart chapter; else go to previous
     if (player.currentTime - currentChapter.startTime > 3) {
-      await player.seekTo(currentChapter.startTime);
+      await seekTo(currentChapter.startTime);
     } else {
       const prev = chapters[idx - 1];
       if (prev) {
-        await player.seekTo(prev.startTime);
+        await seekTo(prev.startTime);
         setCurrentChapter(prev);
       }
     }
     if (!player.playing) player.play();
-  }, [player, currentChapter, chapters, setCurrentChapter]);
+  }, [player, currentChapter, chapters, setCurrentChapter, seekTo]);
 
   const jumpToChapter = useCallback(
     async (chapter: ChapterRecord): Promise<void> => {
-      await player.seekTo(chapter.startTime);
+      await seekTo(chapter.startTime);
       setCurrentChapter(chapter);
       if (!player.playing) player.play();
     },
-    [player, setCurrentChapter],
+    [player, setCurrentChapter, seekTo],
   );
 
   const setSpeedFn = useCallback(
@@ -544,19 +581,34 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     [player],
   );
 
-  const value: PlayerContextValue = {
-    startBook,
-    play,
-    pause,
-    togglePlayPause,
-    seekTo,
-    skipForward,
-    skipBackward,
-    nextChapter,
-    prevChapter,
-    jumpToChapter,
-    setSpeed: setSpeedFn,
-  };
+  const value: PlayerContextValue = useMemo(
+    () => ({
+      startBook,
+      play,
+      pause,
+      togglePlayPause,
+      seekTo,
+      skipForward,
+      skipBackward,
+      nextChapter,
+      prevChapter,
+      jumpToChapter,
+      setSpeed: setSpeedFn,
+    }),
+    [
+      startBook,
+      play,
+      pause,
+      togglePlayPause,
+      seekTo,
+      skipForward,
+      skipBackward,
+      nextChapter,
+      prevChapter,
+      jumpToChapter,
+      setSpeedFn,
+    ],
+  );
 
   return (
     <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>
