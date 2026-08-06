@@ -58,10 +58,17 @@ export const importService = {
         const bookId = 'book_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
         const fileExt = asset.name.substring(asset.name.lastIndexOf('.')) || '.m4b';
 
-        // Extract metadata & chapters from the picked file URI
-        const parsedData = await parseM4bMetadata(asset.uri, asset.name);
+        // 1. Copy audiobook file to persistent audiobooks directory first
+        const audioDestPath = `${audiobooksDir}${bookId}${fileExt}`;
+        await FileSystem.copyAsync({
+          from: asset.uri,
+          to: audioDestPath,
+        });
 
-        // Save cover image to persistent storage if extracted
+        // 2. Extract metadata & chapters from local fileUri (file://...) where random seeking is supported!
+        const parsedData = await parseM4bMetadata(audioDestPath, asset.name);
+
+        // 3. Save cover image to persistent storage if extracted
         let coverPath: string | null = null;
         if (parsedData.coverBase64) {
           const coverExt = parsedData.coverType === 'image/png' ? '.png' : '.jpg';
@@ -70,13 +77,6 @@ export const importService = {
             encoding: FileSystem.EncodingType.Base64,
           });
         }
-
-        // Copy audiobook file to persistent audiobooks directory
-        const audioDestPath = `${audiobooksDir}${bookId}${fileExt}`;
-        await FileSystem.copyAsync({
-          from: asset.uri,
-          to: audioDestPath,
-        });
 
         const nowIso = new Date().toISOString();
         const audiobook: AudiobookRecord = {

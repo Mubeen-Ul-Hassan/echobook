@@ -18,7 +18,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Image } from 'expo-image';
-import { Play, Pause, Music, X } from 'lucide-react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import Animated, {
   FadeInDown,
   FadeOutDown,
@@ -32,7 +32,7 @@ import { usePlaybackStore } from '@/hooks/use-playback-store';
 import { usePlayerContext } from '@/features/player/components/playback-provider';
 import { useTheme } from '@/hooks/use-theme';
 import { ThemedText } from '@/components/themed-text';
-import { Spacing, BottomTabInset } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -74,7 +74,7 @@ export function MiniPlayer() {
         {
           backgroundColor: theme.backgroundElement,
           borderColor: theme.border,
-          bottom: BottomTabInset + Spacing.two,
+          bottom: Spacing.three,
         },
       ]}
     >
@@ -94,7 +94,7 @@ export function MiniPlayer() {
           />
         ) : (
           <View style={[styles.cover, { backgroundColor: theme.backgroundSelected }]}>
-            <Music size={18} color={theme.accent} />
+            <MaterialIcons name="graphic-eq" size={20} color={theme.accent} />
           </View>
         )}
 
@@ -123,9 +123,9 @@ export function MiniPlayer() {
             accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? (
-              <Pause size={18} color="#000000" fill="#000000" />
+              <MaterialIcons name="pause" size={22} color="#000000" />
             ) : (
-              <Play size={18} color="#000000" fill="#000000" style={{ marginLeft: 2 }} />
+              <MaterialIcons name="play-arrow" size={22} color="#000000" />
             )}
           </Pressable>
 
@@ -137,7 +137,7 @@ export function MiniPlayer() {
             accessibilityRole="button"
             accessibilityLabel="Stop and dismiss player"
           >
-            <X size={16} color={theme.textSecondary} />
+            <MaterialIcons name="close" size={20} color={theme.textSecondary} />
           </Pressable>
         </View>
       </Pressable>

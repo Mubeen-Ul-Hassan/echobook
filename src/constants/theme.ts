@@ -16,21 +16,23 @@ export const Colors = {
     textSecondary: '#64748B',
     accent: '#F7991C', // Audible Signature Amber Gold
     accentHover: '#E08816',
+    secondary: '#00A572',
     border: '#E5E7EB',
     card: '#FFFFFF',
     success: '#10B981',
   },
   dark: {
-    text: '#FFFFFF',
-    background: '#121214', // Audible Deep Charcoal Background
-    backgroundElement: '#1C1C1E', // Elevated Card Surface
-    backgroundSelected: '#2C2C30', // Active/Selected Surface
-    textSecondary: '#9CA3AF',
-    accent: '#F7991C', // Audible Signature Amber Gold
+    text: '#E5E1E4',
+    background: '#131315', // Stitch Deep Charcoal Base
+    backgroundElement: '#201F21', // Stitch Surface Container
+    backgroundSelected: '#2A2A2C', // Stitch Container High Surface
+    textSecondary: '#DAC2AE',
+    accent: '#F7991C', // Stitch Primary Amber Gold
     accentHover: '#E08816',
+    secondary: '#4EDEA3', // Stitch Secondary Mint/Teal Accent
     border: '#2E2E34',
-    card: '#1C1C1E',
-    success: '#10B981',
+    card: '#201F21',
+    success: '#4EDEA3',
   },
 } as const;
 

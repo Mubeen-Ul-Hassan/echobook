@@ -846,6 +846,32 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
       pos += header.size;
     }
 
+    // Fallback: If forward scanning failed to locate 'moov' (e.g. 3 GB file with large mdat), scan backwards from end of file
+    if (!moovHeader && fileSize > 1024 * 1024) {
+      const searchStart = Math.max(0, fileSize - 64 * 1024 * 1024);
+      let chunkPos = fileSize - 65536;
+      while (chunkPos >= searchStart && !moovHeader) {
+        const chunk = await readBytesAt(fileUri, chunkPos, 65536);
+        for (let i = 0; i < chunk.length - 8; i++) {
+          if (
+            chunk[i + 4] === 0x6d && // 'm'
+            chunk[i + 5] === 0x6f && // 'o'
+            chunk[i + 6] === 0x6f && // 'o'
+            chunk[i + 7] === 0x76    // 'v'
+          ) {
+            const absolutePos = chunkPos + i;
+            const h = await readAtomHeader(fileUri, absolutePos);
+            if (h && h.type === 'moov') {
+              moovHeader = h;
+              moovHeader.position = absolutePos;
+              break;
+            }
+          }
+        }
+        chunkPos -= 65000;
+      }
+    }
+
     if (moovHeader) {
       const moovPosition = moovHeader.position ?? pos;
 
@@ -880,7 +906,38 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
         mPos += h.size;
       }
 
-      // QuickTime chapter track extraction
+      // 1. Nero chpl chapter extraction (iTunes / OpenAudible / mp4chaps)
+      const chplHeader = await searchAtomInMoov(
+        fileUri,
+        moovPosition,
+        moovHeader.size,
+        moovHeader.headerSize,
+        'chpl'
+      );
+      if (chplHeader && chplHeader.position !== undefined) {
+        const tempChapters = await parseChplBox(
+          fileUri,
+          chplHeader.position,
+          chplHeader.size,
+          chplHeader.headerSize
+        );
+        if (tempChapters.length > 0) {
+          const chapters: ParsedChapter[] = [];
+          for (let i = 0; i < tempChapters.length; i++) {
+            const endTime = i < tempChapters.length - 1
+              ? tempChapters[i + 1].startTime
+              : result.duration;
+            chapters.push({
+              title: tempChapters[i].title,
+              startTime: tempChapters[i].startTime,
+              endTime: Math.max(endTime, tempChapters[i].startTime + 1),
+            });
+          }
+          result.chapters = chapters;
+        }
+      }
+
+      // 2. QuickTime chapter track extraction fallback
       if (result.chapters.length === 0) {
         const qtChapters = await parseQuickTimeChapters(
           fileUri,
@@ -890,39 +947,6 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
         );
         if (qtChapters.length > 0) {
           result.chapters = qtChapters;
-        }
-      }
-
-      // Nero chpl chapter extraction fallback
-      if (result.chapters.length === 0) {
-        const chplHeader = await searchAtomInMoov(
-          fileUri,
-          moovPosition,
-          moovHeader.size,
-          moovHeader.headerSize,
-          'chpl'
-        );
-        if (chplHeader && chplHeader.position !== undefined) {
-          const tempChapters = await parseChplBox(
-            fileUri,
-            chplHeader.position,
-            chplHeader.size,
-            chplHeader.headerSize
-          );
-          if (tempChapters.length > 0) {
-            const chapters: ParsedChapter[] = [];
-            for (let i = 0; i < tempChapters.length; i++) {
-              const endTime = i < tempChapters.length - 1
-                ? tempChapters[i + 1].startTime
-                : result.duration;
-              chapters.push({
-                title: tempChapters[i].title,
-                startTime: tempChapters[i].startTime,
-                endTime: Math.max(endTime, tempChapters[i].startTime + 1),
-              });
-            }
-            result.chapters = chapters;
-          }
         }
       }
 
@@ -1023,7 +1047,7 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
 
 export function autoSegmentChapters(duration: number): ParsedChapter[] {
   if (duration <= 0) {
-    return [{ title: 'Chapter 1', startTime: 0, endTime: 0 }];
+    return [{ title: 'Chapter 1', startTime: 0, endTime: 3600 }];
   }
 
   const SEGMENT_DURATION = 900; // 15 minutes per chapter

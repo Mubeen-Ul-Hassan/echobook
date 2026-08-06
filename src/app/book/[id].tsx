@@ -11,20 +11,7 @@ import { preload } from 'expo-audio';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Image } from 'expo-image';
-import {
-  ArrowLeft,
-  Play,
-  RotateCcw,
-  Clock,
-  Music,
-  Bookmark,
-  ChevronRight,
-  CheckCircle,
-  User,
-  Disc3,
-  Calendar,
-  Hash,
-} from 'lucide-react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
@@ -222,7 +209,7 @@ export default function BookDetailScreen() {
               ]}
               hitSlop={12}
             >
-              <ArrowLeft size={20} color={theme.text} />
+              <MaterialIcons name="arrow-back" size={20} color={theme.text} />
             </Pressable>
           </SafeAreaView>
 
@@ -236,7 +223,7 @@ export default function BookDetailScreen() {
               />
             ) : (
               <View style={[styles.coverPlaceholder, { backgroundColor: theme.backgroundElement }]}>
-                <Music size={64} color={theme.textSecondary} />
+                <MaterialIcons name="graphic-eq" size={64} color={theme.textSecondary} />
               </View>
             )}
           </View>
@@ -250,7 +237,7 @@ export default function BookDetailScreen() {
 
           {book.author && (
             <View style={styles.metaRow}>
-              <User size={14} color={theme.accent} />
+              <MaterialIcons name="person" size={16} color={theme.accent} />
               <ThemedText themeColor="textSecondary" style={styles.metaText}>
                 {book.author}
               </ThemedText>
@@ -259,7 +246,7 @@ export default function BookDetailScreen() {
 
           {book.album && (
             <View style={styles.metaRow}>
-              <Disc3 size={14} color={theme.textSecondary} />
+              <MaterialIcons name="album" size={16} color={theme.textSecondary} />
               <ThemedText themeColor="textSecondary" style={styles.metaText}>
                 {book.album}
               </ThemedText>
@@ -268,17 +255,17 @@ export default function BookDetailScreen() {
 
           <View style={styles.metaChips}>
             <View style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
-              <Clock size={12} color={theme.textSecondary} />
+              <MaterialIcons name="access-time" size={14} color={theme.textSecondary} />
               <ThemedText type="small" themeColor="textSecondary">{formatDuration(book.duration)}</ThemedText>
             </View>
             {book.year && (
               <View style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
-                <Calendar size={12} color={theme.textSecondary} />
+                <MaterialIcons name="calendar-today" size={14} color={theme.textSecondary} />
                 <ThemedText type="small" themeColor="textSecondary">{book.year}</ThemedText>
               </View>
             )}
             <View style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
-              <Hash size={12} color={theme.textSecondary} />
+              <MaterialIcons name="tag" size={14} color={theme.textSecondary} />
               <ThemedText type="small" themeColor="textSecondary">
                 {chapters.length} {chapters.length === 1 ? 'chapter' : 'chapters'}
               </ThemedText>
@@ -328,7 +315,7 @@ export default function BookDetailScreen() {
             accessibilityRole="button"
             accessibilityLabel={playback && playback.position > 0 ? `Resume ${book.title}` : `Play ${book.title}`}
           >
-            <Play size={20} color="#000" fill="#000" style={{ marginLeft: 2 }} />
+            <MaterialIcons name="play-arrow" size={22} color="#000" />
             <ThemedText style={styles.primaryButtonText}>
               {playback && playback.position > 0 ? 'Resume' : 'Play'}
             </ThemedText>
@@ -344,7 +331,7 @@ export default function BookDetailScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Start ${book.title} from the beginning`}
             >
-              <RotateCcw size={18} color={theme.text} />
+              <MaterialIcons name="replay" size={20} color={theme.text} />
               <ThemedText style={styles.secondaryButtonText}>Start Over</ThemedText>
             </Pressable>
           )}
@@ -416,9 +403,9 @@ export default function BookDetailScreen() {
                     {/* Chapter Number / Status */}
                     <View style={styles.chapterIndex}>
                       {isComplete ? (
-                        <CheckCircle size={20} color={theme.accent} />
+                        <MaterialIcons name="check-circle" size={20} color={theme.accent} />
                       ) : isActive ? (
-                        <Play size={16} color={theme.accent} fill={theme.accent} />
+                        <MaterialIcons name="play-arrow" size={18} color={theme.accent} />
                       ) : (
                         <ThemedText themeColor="textSecondary" style={styles.chapterNumber}>
                           {index + 1}
@@ -454,7 +441,7 @@ export default function BookDetailScreen() {
                       )}
                     </View>
 
-                    <ChevronRight size={16} color={theme.textSecondary} />
+                    <MaterialIcons name="chevron-right" size={18} color={theme.textSecondary} />
                   </Pressable>
                 );
               })}
@@ -466,7 +453,7 @@ export default function BookDetailScreen() {
             <View style={styles.listContainer}>
               {bookmarks.length === 0 ? (
                 <View style={styles.emptyList}>
-                  <Bookmark size={36} color={theme.backgroundSelected} />
+                  <MaterialIcons name="bookmark" size={36} color={theme.backgroundSelected} />
                   <ThemedText themeColor="textSecondary" style={styles.emptyText}>
                     No bookmarks yet.{'\n'}Add them while listening.
                   </ThemedText>
@@ -490,7 +477,7 @@ export default function BookDetailScreen() {
                         router.push('/player');
                       }}
                     >
-                      <Bookmark size={16} color={theme.accent} />
+                      <MaterialIcons name="bookmark" size={18} color={theme.accent} />
                       <View style={styles.bookmarkInfo}>
                         <ThemedText numberOfLines={1} style={styles.bookmarkNote}>
                           {bm.note || `Bookmark at ${formatTimestamp(bm.position)}`}

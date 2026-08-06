@@ -13,6 +13,7 @@ import { usePlaybackStore } from '@/hooks/use-playback-store';
 import { dbService } from '@/database/services';
 import { importService } from '@/features/import/services/import-service';
 import { AudiobookRecord, ChapterRecord } from '@/database/types';
+import { autoSegmentChapters } from '@/features/import/services/m4b-parser';
 import {
   getAudioPlayer,
   initAudioSession,
@@ -98,38 +99,34 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     initAudioSession().catch(console.warn);
   }, []);
 
+  // Restore last played book on app launch
   useEffect(() => {
     async function restoreLastSession() {
       try {
-        // Retrieve the most recent playback entry from SQLite
         const recents = await dbService.getRecentPlaybacks(db, 1);
         if (recents.length > 0) {
           const lastPlayback = recents[0];
           const lastBook = await dbService.getAudiobookById(db, lastPlayback.bookId);
           if (lastBook) {
-            const bookChapters = await dbService.getChaptersByBookId(db, lastPlayback.bookId);
+            const bookChapters = await dbService.getChaptersByBookId(db, lastBook.id);
 
-            // Populate the store so components (like the mini-player) reflect the state
             setCurrentBook(lastBook);
             setChapters(bookChapters);
-            
-            // Asynchronously check and repair missing metadata (cover art/chapters)
-            importService.repairOrRefreshBookMetadata(db, lastBook.id).then(({ audiobook, chapters: refreshedChapters }) => {
-              if (audiobook) setCurrentBook(audiobook);
-              if (refreshedChapters.length > 0) setChapters(refreshedChapters);
-            }).catch(console.warn);
+            setDuration(lastBook.duration);
 
-            const activeChapter = bookChapters.find(ch => ch.id === lastPlayback.chapterId) || bookChapters[0] || null;
-            setCurrentChapter(activeChapter);
             setPosition(lastPlayback.position);
-            if (lastPlayback.speed) {
-              setSpeed(lastPlayback.speed);
-            }
 
-            // Warm up the player singleton with the URI and correct timestamp
+            const activeCh = bookChapters.find(
+              (ch) =>
+                lastPlayback.position >= ch.startTime &&
+                lastPlayback.position < ch.endTime
+            );
+            if (activeCh) setCurrentChapter(activeCh);
+            else if (bookChapters.length > 0) setCurrentChapter(bookChapters[0]);
+
             setCurrentUri(lastBook.audioPath);
             await loadAudio(lastBook.audioPath, lastPlayback.position, false);
-            
+
             // Re-apply playback speed to the native audio player once loaded
             if (lastPlayback.speed) {
               player.setPlaybackRate(lastPlayback.speed);
@@ -156,19 +153,42 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       const realDuration = status.duration;
       if (realDuration && realDuration > 0) {
         const activeBook = usePlaybackStore.getState().currentBook;
-        if (usePlaybackStore.getState().duration !== realDuration || (activeBook && activeBook.duration <= 0)) {
+        const activeChapters = usePlaybackStore.getState().chapters;
+
+        const isBrokenChapters =
+          activeChapters.length === 0 ||
+          activeChapters.every((c) => c.endTime <= c.startTime || c.endTime <= 0) ||
+          (activeChapters.length === 1 && activeChapters[0].endTime < realDuration - 1);
+
+        if (
+          usePlaybackStore.getState().duration !== realDuration ||
+          (activeBook && activeBook.duration <= 0) ||
+          isBrokenChapters
+        ) {
           setDuration(realDuration);
 
-          // If currentBook in state/DB had 0 duration, update DB and auto-segment chapters
-          if (activeBook && (!activeBook.duration || activeBook.duration <= 0)) {
-            dbService
-              .updateAudiobookDuration(db, activeBook.id, realDuration)
-              .then(() => {
-                dbService.getChaptersByBookId(db, activeBook.id).then((refreshed) => {
-                  if (refreshed.length > 0) setChapters(refreshed);
-                });
-              })
-              .catch(console.warn);
+          if (activeBook) {
+            dbService.updateAudiobookDuration(db, activeBook.id, realDuration).catch(console.warn);
+
+            if (isBrokenChapters || activeBook.duration <= 0) {
+              const segmented = autoSegmentChapters(realDuration);
+              const newChapters: ChapterRecord[] = segmented.map((ch, idx) => ({
+                id: `${activeBook.id}_ch_${idx}`,
+                bookId: activeBook.id,
+                title: ch.title,
+                startTime: ch.startTime,
+                endTime: ch.endTime,
+                duration: ch.endTime - ch.startTime,
+                order: idx,
+              }));
+
+              dbService.replaceBookChapters(db, activeBook.id, newChapters).then(() => {
+                setChapters(newChapters);
+                const curPos = status.currentTime;
+                const matchCh = newChapters.find((c) => curPos >= c.startTime && curPos < c.endTime) ?? newChapters[0];
+                if (matchCh) setCurrentChapter(matchCh);
+              }).catch(console.warn);
+            }
           }
         }
       }
@@ -195,6 +215,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     setPosition,
     setDuration,
     setChapters,
+    setCurrentChapter,
     setPlaybackError,
   ]);
 
@@ -243,7 +264,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       !status.isLoaded ||
       !currentChapter ||
       isAutoplayCountdown ||
-      isLoadingNewBookRef.current
+      isLoadingNewBookRef.current ||
+      currentChapter.endTime <= currentChapter.startTime ||
+      currentChapter.endTime <= 0
     ) return;
 
     const isAtChapterEnd =

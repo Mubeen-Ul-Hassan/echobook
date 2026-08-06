@@ -14,19 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import Svg, { Path, Text as SvgText } from 'react-native-svg';
 import { useSQLiteContext } from 'expo-sqlite';
-import {
-  ChevronDown,
-  SkipBack,
-  SkipForward,
-  Play,
-  Pause,
-  Bookmark,
-  Timer,
-  Music,
-  X,
-  Check,
-  AlertCircle,
-} from 'lucide-react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import Animated, {
   Easing,
   FadeIn,
@@ -357,7 +345,7 @@ function AutoplayCountdown({ onSkip, onCancel }: { onSkip: () => void; onCancel:
       style={[styles.countdownOverlay, { backgroundColor: theme.background + 'EE' }]}
     >
       <Animated.View
-        entering={ZoomIn.springify().damping(14)}
+        entering={FadeInDown.duration(280).easing(Easing.out(Easing.cubic))}
         style={[styles.countdownCard, { backgroundColor: theme.backgroundElement }]}
       >
         <ThemedText themeColor="textSecondary" style={styles.countdownLabel}>
@@ -377,7 +365,7 @@ function AutoplayCountdown({ onSkip, onCancel }: { onSkip: () => void; onCancel:
             accessibilityRole="button"
             accessibilityLabel="Cancel autoplay"
           >
-            <X size={16} color={theme.text} />
+            <MaterialIcons name="close" size={16} color={theme.text} />
             <ThemedText style={styles.countdownBtnText}>Cancel</ThemedText>
           </Pressable>
           <Pressable
@@ -386,7 +374,7 @@ function AutoplayCountdown({ onSkip, onCancel }: { onSkip: () => void; onCancel:
             accessibilityRole="button"
             accessibilityLabel="Skip to next chapter now"
           >
-            <SkipForward size={16} color="#000" />
+            <MaterialIcons name="skip-next" size={18} color="#000" />
             <ThemedText style={[styles.countdownBtnText, { color: '#000' }]}>Skip Now</ThemedText>
           </Pressable>
         </View>
@@ -569,7 +557,7 @@ export default function PlayerScreen() {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
         <View style={styles.noBookContainer}>
-          <Music size={48} color={theme.textSecondary} />
+          <MaterialIcons name="graphic-eq" size={48} color={theme.textSecondary} />
           <ThemedText themeColor="textSecondary" style={styles.noBookText}>
             No audiobook selected.
           </ThemedText>
@@ -609,7 +597,7 @@ export default function PlayerScreen() {
             accessibilityRole="button"
             accessibilityLabel="Minimise player"
           >
-            <ChevronDown size={28} color={theme.text} />
+            <MaterialIcons name="keyboard-arrow-down" size={32} color={theme.text} />
           </Pressable>
 
           <View style={styles.headerCenter}>
@@ -625,7 +613,7 @@ export default function PlayerScreen() {
               accessibilityRole="button"
               accessibilityLabel={`Sleep timer: ${sleepTimerLabel}. Tap to modify.`}
             >
-              <Timer size={12} color={theme.accent} />
+              <MaterialIcons name="timer" size={14} color={theme.accent} />
               <ThemedText style={[styles.sleepBadgeText, { color: theme.accent }]}>
                 {sleepTimerLabel}
               </ThemedText>
@@ -642,7 +630,7 @@ export default function PlayerScreen() {
             exiting={FadeOut.duration(200)}
             style={[styles.errorBanner, { backgroundColor: '#5C1A1A' }]}
           >
-            <AlertCircle size={16} color="#FF6B6B" />
+            <MaterialIcons name="error-outline" size={18} color="#FF6B6B" />
             <ThemedText style={styles.errorText} numberOfLines={2}>
               {playbackError}
             </ThemedText>
@@ -652,13 +640,13 @@ export default function PlayerScreen() {
               accessibilityRole="button"
               accessibilityLabel="Dismiss error"
             >
-              <X size={16} color="#FF6B6B" />
+              <MaterialIcons name="close" size={18} color="#FF6B6B" />
             </Pressable>
           </Animated.View>
         )}
 
-        {/* ── Cover Art (ZoomIn entrance animation) ── */}
-        <Animated.View entering={ZoomIn.duration(450).springify().damping(16)} style={styles.coverWrapper}>
+        {/* ── Cover Art ── */}
+        <Animated.View entering={FadeIn.duration(300)} style={styles.coverWrapper}>
           <Animated.View style={[styles.coverContainer, coverStyle]}>
             {currentBook.coverPath ? (
               <Image
@@ -669,7 +657,7 @@ export default function PlayerScreen() {
               />
             ) : (
               <View style={[styles.coverPlaceholder, { backgroundColor: theme.backgroundElement }]}>
-                <Music size={72} color={theme.textSecondary} />
+                <MaterialIcons name="graphic-eq" size={72} color={theme.textSecondary} />
               </View>
             )}
 
@@ -703,7 +691,7 @@ export default function PlayerScreen() {
             accessibilityRole="button"
             accessibilityLabel="Add bookmark at current position"
           >
-            <Bookmark size={20} color={theme.textSecondary} />
+            <MaterialIcons name="bookmark" size={22} color={theme.textSecondary} />
           </Pressable>
         </Animated.View>
 
@@ -762,7 +750,7 @@ export default function PlayerScreen() {
             accessibilityLabel="Previous chapter"
             accessibilityState={{ disabled: !hasPrevChapter }}
           >
-            <SkipBack size={28} color={theme.text} fill={hasPrevChapter ? theme.text : 'none'} />
+            <MaterialIcons name="skip-previous" size={32} color={theme.text} />
           </Pressable>
 
           {/* Skip back 30 s */}
@@ -788,9 +776,9 @@ export default function PlayerScreen() {
             }
           >
             {isPlaying ? (
-              <Pause size={32} color="#000" fill="#000" />
+              <MaterialIcons name="pause" size={36} color="#000" />
             ) : (
-              <Play size={32} color="#000" fill="#000" style={{ marginLeft: 3 }} />
+              <MaterialIcons name="play-arrow" size={36} color="#000" />
             )}
           </AnimatedPressable>
 
@@ -818,7 +806,7 @@ export default function PlayerScreen() {
             accessibilityLabel="Next chapter"
             accessibilityState={{ disabled: !hasNextChapter }}
           >
-            <SkipForward size={28} color={theme.text} fill={hasNextChapter ? theme.text : 'none'} />
+            <MaterialIcons name="skip-next" size={32} color={theme.text} />
           </Pressable>
         </Animated.View>
 
@@ -841,7 +829,7 @@ export default function PlayerScreen() {
             accessibilityRole="button"
             accessibilityLabel="Add bookmark"
           >
-            <Bookmark size={16} color={theme.text} />
+            <MaterialIcons name="bookmark" size={18} color={theme.text} />
             <ThemedText style={styles.bottomChipText}>Mark</ThemedText>
           </Pressable>
 
@@ -858,7 +846,7 @@ export default function PlayerScreen() {
                 : 'Set sleep timer'
             }
           >
-            <Timer size={16} color={sleepTimerType ? '#000' : theme.text} />
+            <MaterialIcons name="timer" size={18} color={sleepTimerType ? '#000' : theme.text} />
             <ThemedText style={[styles.bottomChipText, sleepTimerType ? { color: '#000' } : {}]}>
               {sleepTimerLabel ?? 'Sleep'}
             </ThemedText>
@@ -871,12 +859,30 @@ export default function PlayerScreen() {
         <AutoplayCountdown onSkip={handleAutoplaySkip} onCancel={handleAutoplayCancel} />
       )}
 
+      {/* ── Dark Backdrop Overlay for Sheets ── */}
+      {(showSpeedSheet || showSleepSheet || showBookmarkSheet) && (
+        <Pressable
+          style={[StyleSheet.absoluteFill, { zIndex: 35 }]}
+          onPress={() => {
+            setShowSpeedSheet(false);
+            setShowSleepSheet(false);
+            setShowBookmarkSheet(false);
+          }}
+        >
+          <Animated.View
+            entering={FadeIn.duration(200)}
+            exiting={FadeOut.duration(150)}
+            style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0, 0, 0, 0.65)' }]}
+          />
+        </Pressable>
+      )}
+
       {/* ── Speed Sheet ── */}
       {showSpeedSheet && (
         <Animated.View
-          entering={SlideInDown.springify().damping(18).stiffness(150)}
-          exiting={SlideOutDown.duration(220)}
-          style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement }]}
+          entering={SlideInDown.duration(280).easing(Easing.out(Easing.cubic))}
+          exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.cubic))}
+          style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
         >
           <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
           <ThemedText style={styles.sheetTitle}>Playback Speed</ThemedText>
@@ -915,9 +921,9 @@ export default function PlayerScreen() {
       {/* ── Sleep Timer Sheet ── */}
       {showSleepSheet && (
         <Animated.View
-          entering={SlideInDown.springify().damping(18).stiffness(150)}
-          exiting={SlideOutDown.duration(220)}
-          style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement }]}
+          entering={SlideInDown.duration(280).easing(Easing.out(Easing.cubic))}
+          exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.cubic))}
+          style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
         >
           <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
           <ThemedText style={styles.sheetTitle}>Sleep Timer</ThemedText>
@@ -928,7 +934,7 @@ export default function PlayerScreen() {
               accessibilityRole="button"
               accessibilityLabel="Cancel sleep timer"
             >
-              <X size={16} color={theme.text} />
+              <MaterialIcons name="close" size={18} color={theme.text} />
               <ThemedText style={styles.clearTimerText}>Cancel timer</ThemedText>
             </Pressable>
           )}
@@ -981,9 +987,9 @@ export default function PlayerScreen() {
       {/* ── Bookmark Sheet ── */}
       {showBookmarkSheet && (
         <Animated.View
-          entering={SlideInDown.springify().damping(18).stiffness(150)}
-          exiting={SlideOutDown.duration(220)}
-          style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement }]}
+          entering={SlideInDown.duration(280).easing(Easing.out(Easing.cubic))}
+          exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.cubic))}
+          style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
         >
           <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
           <ThemedText style={styles.sheetTitle}>Add Bookmark</ThemedText>
@@ -1012,7 +1018,7 @@ export default function PlayerScreen() {
             accessibilityRole="button"
             accessibilityLabel="Save bookmark at current position"
           >
-            <Check size={18} color="#000" />
+            <MaterialIcons name="check" size={20} color="#000" />
             <ThemedText style={styles.bookmarkAddText}>Save Bookmark</ThemedText>
           </Pressable>
           {bookmarks.length > 0 && (
@@ -1027,7 +1033,7 @@ export default function PlayerScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Bookmark: ${bm.note ?? formatTime(bm.position)}, in ${bmChapter?.title ?? 'unknown chapter'}`}
                   >
-                    <Bookmark size={14} color={theme.accent} />
+                    <MaterialIcons name="bookmark" size={16} color={theme.accent} />
                     <View style={styles.bookmarkItemInfo}>
                       <ThemedText numberOfLines={1} style={styles.bookmarkItemNote}>
                         {bm.note ?? formatTime(bm.position)}
@@ -1202,11 +1208,12 @@ const styles = StyleSheet.create({
   // Bottom sheets
   bottomSheet: {
     position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1,
     padding: Spacing.four, paddingBottom: Spacing.five,
     zIndex: 40,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.35, shadowRadius: 16, elevation: 24,
+    shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
+    shadowOpacity: 0.4, shadowRadius: 20, elevation: 28,
   },
   sheetHandle: {
     width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: Spacing.three,

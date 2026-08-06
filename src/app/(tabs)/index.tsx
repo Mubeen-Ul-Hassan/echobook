@@ -13,20 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Image } from 'expo-image';
-import {
-  Plus,
-  Search,
-  Play,
-  BookOpen,
-  Clock,
-  Music,
-  LayoutGrid,
-  List,
-  Sparkles,
-  CheckCircle,
-  Headphones,
-  X,
-} from 'lucide-react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useRouter, type Href } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
@@ -232,7 +219,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={styles.brandRow}>
           <View style={[styles.logoIcon, { backgroundColor: theme.accent }]}>
-            <Headphones size={20} color="#000" />
+            <MaterialIcons name="headphones" size={20} color="#000" />
           </View>
           <View>
             <ThemedText style={styles.appName}>EchoBook</ThemedText>
@@ -256,7 +243,7 @@ export default function HomeScreen() {
             <ActivityIndicator size="small" color="#000" />
           ) : (
             <>
-              <Plus size={16} color="#000" strokeWidth={3} />
+              <MaterialIcons name="add" size={18} color="#000" />
               <ThemedText style={styles.importButtonText}>Import</ThemedText>
             </>
           )}
@@ -269,7 +256,7 @@ export default function HomeScreen() {
       >
         {/* ── Search Bar ── */}
         <Animated.View entering={FadeInDown.duration(300)} style={[styles.searchContainer, { backgroundColor: theme.backgroundElement }]}>
-          <Search size={18} color={theme.textSecondary} style={styles.searchIcon} />
+          <MaterialIcons name="search" size={20} color={theme.textSecondary} style={styles.searchIcon} />
           <TextInput
             style={[styles.searchInput, { color: theme.text }]}
             placeholder="Search audiobooks, authors..."
@@ -280,7 +267,7 @@ export default function HomeScreen() {
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery('')} hitSlop={8}>
-              <X size={16} color={theme.textSecondary} />
+              <MaterialIcons name="close" size={18} color={theme.textSecondary} />
             </Pressable>
           )}
         </Animated.View>
@@ -289,7 +276,7 @@ export default function HomeScreen() {
         {recentPlayback && !searchQuery && (
           <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.sectionContainer}>
             <View style={styles.sectionHeaderRow}>
-              <Sparkles size={14} color={theme.accent} style={{ marginRight: 6 }} />
+              <MaterialIcons name="auto-awesome" size={16} color={theme.accent} style={{ marginRight: 6 }} />
               <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitleText}>
                 CONTINUE LISTENING
               </ThemedText>
@@ -312,7 +299,7 @@ export default function HomeScreen() {
                 <Image source={{ uri: recentPlayback.coverPath }} style={styles.continueCover} />
               ) : (
                 <View style={[styles.continueCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
-                  <Music size={28} color={theme.textSecondary} />
+                  <MaterialIcons name="graphic-eq" size={28} color={theme.textSecondary} />
                 </View>
               )}
 
@@ -325,7 +312,7 @@ export default function HomeScreen() {
                 </ThemedText>
 
                 <View style={styles.continueProgressRow}>
-                  <Clock size={12} color={theme.accent} style={{ marginRight: 4 }} />
+                  <MaterialIcons name="access-time" size={14} color={theme.accent} style={{ marginRight: 4 }} />
                   <ThemedText type="small" style={{ color: theme.accent, fontWeight: '600' }}>
                     {formatTimeRemaining(recentPlayback.duration - recentPlayback.position)}
                   </ThemedText>
@@ -349,7 +336,7 @@ export default function HomeScreen() {
                 style={[styles.continuePlayButton, { backgroundColor: theme.accent }]}
                 onPress={() => handleStartBook(recentPlayback.bookId)}
               >
-                <Play size={18} color="#000" fill="#000" style={{ marginLeft: 2 }} />
+                <MaterialIcons name="play-arrow" size={22} color="#000" />
               </Pressable>
             </Pressable>
           </Animated.View>
@@ -380,7 +367,7 @@ export default function HomeScreen() {
                       <Image source={{ uri: book.coverPath }} style={styles.recentCover} />
                     ) : (
                       <View style={[styles.recentCoverPlaceholder, { backgroundColor: theme.backgroundElement }]}>
-                        <Music size={32} color={theme.textSecondary} />
+                        <MaterialIcons name="graphic-eq" size={32} color={theme.textSecondary} />
                       </View>
                     )}
                     <View style={styles.durationBadge}>
@@ -417,7 +404,7 @@ export default function HomeScreen() {
                   viewMode === 'grid' && { backgroundColor: theme.backgroundSelected },
                 ]}
               >
-                <LayoutGrid size={15} color={viewMode === 'grid' ? theme.accent : theme.textSecondary} />
+                <MaterialIcons name="grid-view" size={18} color={viewMode === 'grid' ? theme.accent : theme.textSecondary} />
               </Pressable>
               <Pressable
                 onPress={() => setViewMode('list')}
@@ -426,7 +413,7 @@ export default function HomeScreen() {
                   viewMode === 'list' && { backgroundColor: theme.backgroundSelected },
                 ]}
               >
-                <List size={15} color={viewMode === 'list' ? theme.accent : theme.textSecondary} />
+                <MaterialIcons name="format-list-bulleted" size={18} color={viewMode === 'list' ? theme.accent : theme.textSecondary} />
               </Pressable>
             </View>
           </View>
@@ -470,7 +457,7 @@ export default function HomeScreen() {
           {/* Audiobooks Content */}
           {filteredBooks.length === 0 ? (
             <View style={[styles.emptyContainer, { backgroundColor: theme.backgroundElement }]}>
-              <BookOpen size={44} color={theme.textSecondary} style={{ marginBottom: Spacing.two }} />
+              <MaterialIcons name="menu-book" size={44} color={theme.textSecondary} style={{ marginBottom: Spacing.two }} />
               <ThemedText type="smallBold" style={{ textAlign: 'center', marginBottom: 4 }}>
                 {searchQuery ? 'No matching audiobooks' : 'No audiobooks in this category'}
               </ThemedText>
@@ -502,7 +489,7 @@ export default function HomeScreen() {
                         <Image source={{ uri: book.coverPath }} style={styles.gridCover} />
                       ) : (
                         <View style={[styles.gridCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
-                          <Music size={36} color={theme.textSecondary} />
+                          <MaterialIcons name="graphic-eq" size={36} color={theme.textSecondary} />
                         </View>
                       )}
 
@@ -511,12 +498,12 @@ export default function HomeScreen() {
                         style={[styles.gridPlayBadge, { backgroundColor: theme.accent }]}
                         onPress={() => handleStartBook(book.id)}
                       >
-                        <Play size={14} color="#000" fill="#000" style={{ marginLeft: 2 }} />
+                        <MaterialIcons name="play-arrow" size={16} color="#000" />
                       </Pressable>
 
                       {isDone && (
                         <View style={styles.doneBadge}>
-                          <CheckCircle size={14} color="#4ADE80" />
+                          <MaterialIcons name="check-circle" size={16} color="#4ADE80" />
                         </View>
                       )}
                     </View>
@@ -566,7 +553,7 @@ export default function HomeScreen() {
                       <Image source={{ uri: book.coverPath }} style={styles.listCover} />
                     ) : (
                       <View style={[styles.listCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
-                        <Music size={22} color={theme.textSecondary} />
+                        <MaterialIcons name="graphic-eq" size={22} color={theme.textSecondary} />
                       </View>
                     )}
 
@@ -589,7 +576,7 @@ export default function HomeScreen() {
                       style={[styles.listPlayBtn, { backgroundColor: theme.accent }]}
                       onPress={() => handleStartBook(book.id)}
                     >
-                      <Play size={14} color="#000" fill="#000" style={{ marginLeft: 2 }} />
+                      <MaterialIcons name="play-arrow" size={16} color="#000" />
                     </Pressable>
                   </Pressable>
                 );
