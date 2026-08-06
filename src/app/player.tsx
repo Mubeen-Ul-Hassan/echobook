@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Dimensions,
-  PanResponder,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,11 +9,12 @@ import {
   AccessibilityInfo,
   TextInput,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
 import Svg, { Path, Text as SvgText } from 'react-native-svg';
 import { useSQLiteContext } from 'expo-sqlite';
 import { MaterialIcons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   FadeIn,
@@ -23,6 +23,7 @@ import Animated, {
   SlideInDown,
   SlideOutDown,
   ZoomIn,
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -215,8 +216,12 @@ function SeekBar({
   const currentOffset = Math.max(0, Math.min(effectiveDuration, position - effectiveStart));
   const currentRatio = currentOffset / effectiveDuration;
 
-  // Reanimated shared value for smooth interpolation between status updates
+  // Reanimated shared values – all gesture handling below runs entirely on the
+  // UI thread (via react-native-gesture-handler worklets), which avoids the
+  // JS-thread round trips / stale `locationX` readings that make a PanResponder
+  // based slider feel like it "jumps"/"blinks" while dragging on Android.
   const progressSV = useSharedValue(currentRatio);
+  const isDragging = useSharedValue(false);
 
   useEffect(() => {
     if (!isDraggingRef.current && !justSoughtRef.current && effectiveDuration > 0) {
@@ -232,7 +237,10 @@ function SeekBar({
   }));
 
   const thumbStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: progressSV.value * SEEK_BAR_WIDTH - 8 }],
+    transform: [
+      { translateX: progressSV.value * SEEK_BAR_WIDTH - 8 },
+      { scale: withTiming(isDragging.value ? 1.35 : 1, { duration: 120 }) },
+    ],
   }));
 
   const chapterStartPx = duration > 0 ? (chapterStart / duration) * SEEK_BAR_WIDTH : 0;
@@ -241,83 +249,91 @@ function SeekBar({
       ? ((chapterEnd - chapterStart) / duration) * SEEK_BAR_WIDTH
       : SEEK_BAR_WIDTH;
 
-  const updateProgressFromEvent = (evt: any) => {
-    const locX = evt.nativeEvent.locationX;
-    const ratio = Math.min(1, Math.max(0, locX / SEEK_BAR_WIDTH));
-    progressSV.value = ratio;
-    return ratio;
-  };
+  const handleDragStart = useCallback(() => {
+    isDraggingRef.current = true;
+    if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+  }, []);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
-      onPanResponderGrant: (evt) => {
-        isDraggingRef.current = true;
-        if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
-        updateProgressFromEvent(evt);
-      },
-      onPanResponderMove: (evt) => {
-        updateProgressFromEvent(evt);
-      },
-      onPanResponderRelease: (evt) => {
-        const ratio = updateProgressFromEvent(evt);
-        isDraggingRef.current = false;
-        justSoughtRef.current = true;
-        onSeek(effectiveStart + ratio * effectiveDuration);
+  const handleDragEnd = useCallback(
+    (ratio: number) => {
+      isDraggingRef.current = false;
+      justSoughtRef.current = true;
+      onSeek(effectiveStart + ratio * effectiveDuration);
 
-        if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
-        lockTimerRef.current = setTimeout(() => {
-          justSoughtRef.current = false;
-        }, 500);
-      },
-      onPanResponderTerminate: () => {
-        isDraggingRef.current = false;
-      },
-    }),
-  ).current;
+      if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+      lockTimerRef.current = setTimeout(() => {
+        justSoughtRef.current = false;
+      }, 500);
+    },
+    [onSeek, effectiveStart, effectiveDuration],
+  );
+
+  const panGesture = Gesture.Pan()
+    .minDistance(0)
+    .onBegin((evt) => {
+      'worklet';
+      isDragging.value = true;
+      progressSV.value = Math.min(1, Math.max(0, evt.x / SEEK_BAR_WIDTH));
+      runOnJS(handleDragStart)();
+    })
+    .onUpdate((evt) => {
+      'worklet';
+      progressSV.value = Math.min(1, Math.max(0, evt.x / SEEK_BAR_WIDTH));
+    })
+    .onEnd((evt) => {
+      'worklet';
+      const ratio = Math.min(1, Math.max(0, evt.x / SEEK_BAR_WIDTH));
+      progressSV.value = ratio;
+      isDragging.value = false;
+      runOnJS(handleDragEnd)(ratio);
+    })
+    .onFinalize(() => {
+      'worklet';
+      isDragging.value = false;
+    });
 
   return (
-    <View
-      style={styles.seekBarHitArea}
-      accessibilityRole="adjustable"
-      accessibilityLabel={`Progress: ${formatTime(currentOffset)} of ${formatTime(effectiveDuration)}`}
-      accessibilityValue={{ min: 0, max: effectiveDuration, now: Math.floor(currentOffset) }}
-      accessibilityActions={[
-        { name: 'increment', label: 'Skip forward 30 seconds' },
-        { name: 'decrement', label: 'Skip back 30 seconds' },
-      ]}
-      {...panResponder.panHandlers}
-    >
-      {/* Track background */}
-      <View style={[styles.seekTrack, { backgroundColor: trackColor }]}>
-        {!isChapterMode && (
-          /* Chapter range highlight when in Book mode */
-          <View
-            style={[
-              styles.seekChapterRange,
-              { left: chapterStartPx, width: chapterWidthPx, backgroundColor: accentColor + '28' },
-            ]}
-          />
-        )}
-        {/* Progress fill – driven by Reanimated shared value */}
-        <Animated.View style={[styles.seekFill, { backgroundColor: accentColor }, fillStyle]} />
-      </View>
-      {/* Thumb dot */}
-      <Animated.View
-        style={[
-          styles.seekThumb,
-          {
-            backgroundColor: accentColor,
-            shadowColor: accentColor,
-            shadowOpacity: 0.5,
-            shadowRadius: 4,
-            elevation: 3,
-          },
-          thumbStyle,
+    <GestureDetector gesture={panGesture}>
+      <View
+        style={styles.seekBarHitArea}
+        accessibilityRole="adjustable"
+        accessibilityLabel={`Progress: ${formatTime(currentOffset)} of ${formatTime(effectiveDuration)}`}
+        accessibilityValue={{ min: 0, max: effectiveDuration, now: Math.floor(currentOffset) }}
+        accessibilityActions={[
+          { name: 'increment', label: 'Skip forward 30 seconds' },
+          { name: 'decrement', label: 'Skip back 30 seconds' },
         ]}
-      />
-    </View>
+      >
+        {/* Track background */}
+        <View style={[styles.seekTrack, { backgroundColor: trackColor }]}>
+          {!isChapterMode && (
+            /* Chapter range highlight when in Book mode */
+            <View
+              style={[
+                styles.seekChapterRange,
+                { left: chapterStartPx, width: chapterWidthPx, backgroundColor: accentColor + '28' },
+              ]}
+            />
+          )}
+          {/* Progress fill – driven by Reanimated shared value */}
+          <Animated.View style={[styles.seekFill, { backgroundColor: accentColor }, fillStyle]} />
+        </View>
+        {/* Thumb dot */}
+        <Animated.View
+          style={[
+            styles.seekThumb,
+            {
+              backgroundColor: accentColor,
+              shadowColor: accentColor,
+              shadowOpacity: 0.5,
+              shadowRadius: 4,
+              elevation: 3,
+            },
+            thumbStyle,
+          ]}
+        />
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -399,6 +415,8 @@ export default function PlayerScreen() {
   const theme = useTheme();
   const db = useSQLiteContext();
   const player = getAudioPlayer();
+  const insets = useSafeAreaInsets();
+  const bottomSafePadding = Math.max(insets.bottom, 16);
   const {
     play,
     pause,
@@ -818,33 +836,47 @@ export default function PlayerScreen() {
         </Animated.View>
 
         {/* ── Bottom toolbar: Speed | Bookmark | Sleep Timer ── */}
-        <Animated.View entering={FadeInDown.delay(250).duration(300)} style={styles.bottomRow}>
+        <Animated.View
+          entering={FadeInDown.delay(250).duration(300)}
+          style={[styles.bottomRow, { paddingBottom: bottomSafePadding + Spacing.one }]}
+        >
           <Pressable
             onPress={() => setShowSpeedSheet(true)}
-            style={[styles.bottomChip, { backgroundColor: theme.backgroundElement }]}
+            style={({ pressed }) => [
+              styles.bottomChip,
+              { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.8 : 1 },
+            ]}
             accessibilityRole="button"
-            accessibilityLabel={`Playback speed: ${speed === 1.0 ? '1×' : `${speed}×`}. Tap to change.`}
+            accessibilityLabel={`Playback speed: ${speed === 1.0 ? '1.0×' : `${speed}×`}. Tap to change.`}
           >
+            <MaterialIcons name="speed" size={18} color={theme.accent} />
             <ThemedText style={[styles.bottomChipText, { color: theme.accent }]}>
-              {speed === 1.0 ? '1×' : `${speed}×`}
+              {speed === 1.0 ? '1.0×' : `${speed}×`}
             </ThemedText>
           </Pressable>
 
           <Pressable
             onPress={() => setShowBookmarkSheet(true)}
-            style={[styles.bottomChip, { backgroundColor: theme.backgroundElement }]}
+            style={({ pressed }) => [
+              styles.bottomChip,
+              { backgroundColor: theme.backgroundElement, borderColor: theme.border, opacity: pressed ? 0.8 : 1 },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Add bookmark"
           >
-            <MaterialIcons name="bookmark" size={18} color={theme.text} />
+            <MaterialIcons name="bookmark-outline" size={18} color={theme.text} />
             <ThemedText style={styles.bottomChipText}>Mark</ThemedText>
           </Pressable>
 
           <Pressable
             onPress={() => setShowSleepSheet(true)}
-            style={[
+            style={({ pressed }) => [
               styles.bottomChip,
-              { backgroundColor: sleepTimerType ? theme.accent : theme.backgroundElement },
+              {
+                backgroundColor: sleepTimerType ? theme.accent : theme.backgroundElement,
+                borderColor: sleepTimerType ? theme.accent : theme.border,
+                opacity: pressed ? 0.8 : 1,
+              },
             ]}
             accessibilityRole="button"
             accessibilityLabel={
@@ -889,27 +921,41 @@ export default function PlayerScreen() {
         <Animated.View
           entering={SlideInDown.duration(280).easing(Easing.out(Easing.cubic))}
           exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.cubic))}
-          style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+          style={[
+            styles.bottomSheet,
+            {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+              paddingBottom: bottomSafePadding + Spacing.three,
+            },
+          ]}
         >
           <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
-          <ThemedText style={styles.sheetTitle}>Playback Speed</ThemedText>
+          <View style={styles.sheetHeaderRow}>
+            <MaterialIcons name="speed" size={22} color={theme.accent} />
+            <ThemedText style={styles.sheetTitle}>Playback Speed</ThemedText>
+          </View>
           <View style={styles.speedGrid}>
             {SPEED_OPTIONS.map((s) => (
               <Pressable
                 key={s}
                 onPress={() => { setSpeed(s); setShowSpeedSheet(false); }}
-                style={[
+                style={({ pressed }) => [
                   styles.speedOption,
-                  { backgroundColor: speed === s ? theme.accent : theme.backgroundSelected },
+                  {
+                    backgroundColor: speed === s ? theme.accent : theme.backgroundSelected,
+                    borderColor: speed === s ? theme.accent : theme.border,
+                    opacity: pressed ? 0.85 : 1,
+                  },
                 ]}
                 accessibilityRole="button"
-                accessibilityLabel={`${s === 1.0 ? '1×' : `${s}×`} speed`}
+                accessibilityLabel={`${s === 1.0 ? '1.0×' : `${s}×`} speed`}
                 accessibilityState={{ selected: speed === s }}
               >
                 <ThemedText
                   style={[styles.speedOptionText, speed === s ? { color: '#000' } : {}]}
                 >
-                  {s === 1.0 ? '1×' : `${s}×`}
+                  {s === 1.0 ? '1.0×' : `${s}×`}
                 </ThemedText>
               </Pressable>
             ))}
@@ -920,7 +966,7 @@ export default function PlayerScreen() {
             accessibilityRole="button"
             accessibilityLabel="Close speed sheet"
           >
-            <ThemedText themeColor="textSecondary">Close</ThemedText>
+            <ThemedText themeColor="textSecondary" style={{ fontWeight: '600' }}>Close</ThemedText>
           </Pressable>
         </Animated.View>
       )}
@@ -930,21 +976,33 @@ export default function PlayerScreen() {
         <Animated.View
           entering={SlideInDown.duration(280).easing(Easing.out(Easing.cubic))}
           exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.cubic))}
-          style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+          style={[
+            styles.bottomSheet,
+            {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+              paddingBottom: bottomSafePadding + Spacing.three,
+            },
+          ]}
         >
           <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
-          <ThemedText style={styles.sheetTitle}>Sleep Timer</ThemedText>
+          <View style={styles.sheetHeaderRow}>
+            <MaterialIcons name="timer" size={22} color={theme.accent} />
+            <ThemedText style={styles.sheetTitle}>Sleep Timer</ThemedText>
+          </View>
+
           {sleepTimerType && (
             <Pressable
               onPress={() => { clearSleepTimer(); setShowSleepSheet(false); }}
-              style={[styles.clearTimerBtn, { backgroundColor: theme.backgroundSelected }]}
+              style={[styles.clearTimerBtn, { backgroundColor: '#5C1A1A' }]}
               accessibilityRole="button"
               accessibilityLabel="Cancel sleep timer"
             >
-              <MaterialIcons name="close" size={18} color={theme.text} />
-              <ThemedText style={styles.clearTimerText}>Cancel timer</ThemedText>
+              <MaterialIcons name="close" size={18} color="#FF6B6B" />
+              <ThemedText style={[styles.clearTimerText, { color: '#FF6B6B' }]}>Cancel Timer</ThemedText>
             </Pressable>
           )}
+
           <View style={styles.sleepGrid}>
             {SLEEP_OPTIONS.map((opt) => {
               const isActive =
@@ -964,10 +1022,14 @@ export default function PlayerScreen() {
                     }
                     setShowSleepSheet(false);
                   }}
-                  style={[
+                  style={({ pressed }) => [
                     styles.sleepOption,
-                    { backgroundColor: isActive ? theme.accent : theme.backgroundSelected },
-                    opt.value === 'chapter' && { flex: 1 },
+                    {
+                      backgroundColor: isActive ? theme.accent : theme.backgroundSelected,
+                      borderColor: isActive ? theme.accent : theme.border,
+                      opacity: pressed ? 0.85 : 1,
+                    },
+                    opt.value === 'chapter' && { width: '100%', marginTop: 4 },
                   ]}
                   accessibilityRole="button"
                   accessibilityLabel={`Sleep after ${opt.label}`}
@@ -980,13 +1042,14 @@ export default function PlayerScreen() {
               );
             })}
           </View>
+
           <Pressable
             onPress={() => setShowSleepSheet(false)}
             style={[styles.sheetCloseBtn, { backgroundColor: theme.backgroundSelected }]}
             accessibilityRole="button"
             accessibilityLabel="Close sleep timer sheet"
           >
-            <ThemedText themeColor="textSecondary">Close</ThemedText>
+            <ThemedText themeColor="textSecondary" style={{ fontWeight: '600' }}>Close</ThemedText>
           </Pressable>
         </Animated.View>
       )}
@@ -996,20 +1059,31 @@ export default function PlayerScreen() {
         <Animated.View
           entering={SlideInDown.duration(280).easing(Easing.out(Easing.cubic))}
           exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.cubic))}
-          style={[styles.bottomSheet, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}
+          style={[
+            styles.bottomSheet,
+            {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+              paddingBottom: bottomSafePadding + Spacing.three,
+            },
+          ]}
         >
           <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
-          <ThemedText style={styles.sheetTitle}>Add Bookmark</ThemedText>
+          <View style={styles.sheetHeaderRow}>
+            <MaterialIcons name="bookmark" size={22} color={theme.accent} />
+            <ThemedText style={styles.sheetTitle}>Add Bookmark</ThemedText>
+          </View>
           <ThemedText themeColor="textSecondary" style={styles.bookmarkPosition}>
             {currentChapter?.title ?? ''} · {formatTime(position)}
           </ThemedText>
+
           <TextInput
             style={[
               styles.bookmarkInput,
               {
                 color: theme.text,
                 backgroundColor: theme.backgroundSelected,
-                borderColor: theme.backgroundSelected,
+                borderColor: theme.border,
               },
             ]}
             placeholder="Add an optional note..."
@@ -1019,15 +1093,20 @@ export default function PlayerScreen() {
             maxLength={100}
             keyboardAppearance="dark"
           />
+
           <Pressable
             onPress={handleAddBookmark}
-            style={[styles.bookmarkAddBtn, { backgroundColor: theme.accent }]}
+            style={({ pressed }) => [
+              styles.bookmarkAddBtn,
+              { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
+            ]}
             accessibilityRole="button"
             accessibilityLabel="Save bookmark at current position"
           >
             <MaterialIcons name="check" size={20} color="#000" />
             <ThemedText style={styles.bookmarkAddText}>Save Bookmark</ThemedText>
           </Pressable>
+
           {bookmarks.length > 0 && (
             <ScrollView style={styles.bookmarkList} showsVerticalScrollIndicator={false}>
               {bookmarks.slice(-5).reverse().map((bm) => {
@@ -1036,7 +1115,10 @@ export default function PlayerScreen() {
                   <Pressable
                     key={bm.id}
                     onPress={() => { seekTo(bm.position); setShowBookmarkSheet(false); }}
-                    style={[styles.bookmarkItem, { borderBottomColor: theme.backgroundSelected }]}
+                    style={({ pressed }) => [
+                      styles.bookmarkItem,
+                      { borderBottomColor: theme.border, opacity: pressed ? 0.7 : 1 },
+                    ]}
                     accessibilityRole="button"
                     accessibilityLabel={`Bookmark: ${bm.note ?? formatTime(bm.position)}, in ${bmChapter?.title ?? 'unknown chapter'}`}
                   >
@@ -1054,13 +1136,14 @@ export default function PlayerScreen() {
               })}
             </ScrollView>
           )}
+
           <Pressable
             onPress={() => setShowBookmarkSheet(false)}
             style={[styles.sheetCloseBtn, { backgroundColor: theme.backgroundSelected }]}
             accessibilityRole="button"
             accessibilityLabel="Close bookmark sheet"
           >
-            <ThemedText themeColor="textSecondary">Close</ThemedText>
+            <ThemedText themeColor="textSecondary" style={{ fontWeight: '600' }}>Close</ThemedText>
           </Pressable>
         </Animated.View>
       )}
@@ -1183,18 +1266,6 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
 
-  // Bottom toolbar
-  bottomRow: {
-    flexDirection: 'row', justifyContent: 'center', gap: Spacing.three,
-    paddingHorizontal: Spacing.four, paddingTop: Spacing.two,
-  },
-  bottomChip: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.one + 2,
-    paddingHorizontal: Spacing.three, paddingVertical: Spacing.two,
-    borderRadius: 100,
-  },
-  bottomChipText: { fontSize: 13, fontWeight: '600' },
-
   // Countdown overlay
   countdownOverlay: {
     ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', zIndex: 50,
@@ -1212,48 +1283,114 @@ const styles = StyleSheet.create({
   },
   countdownBtnText: { fontWeight: '600', fontSize: 14 },
 
+  // Bottom toolbar
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: Spacing.three,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.two,
+  },
+  bottomChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one + 2,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two + 2,
+    borderRadius: 100,
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  bottomChipText: { fontSize: 13, fontWeight: '700' },
+
   // Bottom sheets
   bottomSheet: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    borderTopLeftRadius: 28, borderTopRightRadius: 28,
-    borderTopWidth: 1, borderLeftWidth: 1, borderRightWidth: 1,
-    padding: Spacing.four, paddingBottom: Spacing.five,
-    zIndex: 40,
-    shadowColor: '#000', shadowOffset: { width: 0, height: -6 },
-    shadowOpacity: 0.4, shadowRadius: 20, elevation: 28,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.three,
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 32,
   },
   sheetHandle: {
-    width: 36, height: 4, borderRadius: 2, alignSelf: 'center', marginBottom: Spacing.three,
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    alignSelf: 'center',
+    marginBottom: Spacing.three,
   },
-  sheetTitle: { fontSize: 17, fontWeight: '700', marginBottom: Spacing.three },
+  sheetHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    marginBottom: Spacing.three,
+  },
+  sheetTitle: { fontSize: 18, fontWeight: '800' },
   sheetCloseBtn: {
-    alignItems: 'center', paddingVertical: Spacing.two + 2,
-    borderRadius: Spacing.three, marginTop: Spacing.two,
+    alignItems: 'center',
+    paddingVertical: Spacing.two + 2,
+    borderRadius: Spacing.three,
+    marginTop: Spacing.two,
   },
 
   speedGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.two,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+    marginBottom: Spacing.two,
   },
   speedOption: {
-    paddingHorizontal: Spacing.three, paddingVertical: Spacing.two,
-    borderRadius: 100, minWidth: 60, alignItems: 'center',
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two + 2,
+    borderRadius: 100,
+    minWidth: 64,
+    alignItems: 'center',
+    borderWidth: 1,
   },
   speedOptionText: { fontWeight: '700', fontSize: 15 },
 
   sleepGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two, marginBottom: Spacing.two,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+    marginBottom: Spacing.two,
   },
   sleepOption: {
-    paddingHorizontal: Spacing.three, paddingVertical: Spacing.two,
-    borderRadius: 100, minWidth: 56, alignItems: 'center',
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.two + 2,
+    borderRadius: 100,
+    minWidth: 60,
+    alignItems: 'center',
+    borderWidth: 1,
   },
-  sleepOptionText: { fontWeight: '600', fontSize: 14 },
+  sleepOptionText: { fontWeight: '700', fontSize: 14 },
   clearTimerBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: Spacing.two,
-    paddingHorizontal: Spacing.three, paddingVertical: Spacing.two,
-    borderRadius: 100, marginBottom: Spacing.two, alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderRadius: 100,
+    marginBottom: Spacing.two,
+    alignSelf: 'flex-start',
   },
-  clearTimerText: { fontWeight: '600' },
+  clearTimerText: { fontWeight: '700', fontSize: 13 },
 
   // Bookmark sheet
   bookmarkPosition: { fontSize: 13, marginBottom: Spacing.two },

@@ -412,17 +412,112 @@ export default function HomeScreen() {
 
           {/* Audiobooks Content */}
           {filteredBooks.length === 0 ? (
-            <View style={[styles.emptyContainer, { backgroundColor: theme.backgroundElement }]}>
-              <MaterialIcons name="menu-book" size={44} color={theme.textSecondary} style={{ marginBottom: Spacing.two }} />
-              <ThemedText type="smallBold" style={{ textAlign: 'center', marginBottom: 4 }}>
-                {searchQuery ? 'No matching audiobooks' : 'No audiobooks in this category'}
-              </ThemedText>
-              <ThemedText themeColor="textSecondary" style={{ textAlign: 'center', fontSize: 13 }}>
+            <Animated.View
+              entering={FadeInDown.duration(300)}
+              style={[
+                styles.emptyContainer,
+                {
+                  backgroundColor: theme.backgroundElement,
+                  borderColor: theme.border,
+                  borderWidth: 1,
+                },
+              ]}
+            >
+              {/* Branded Icon Container */}
+              <View
+                style={[
+                  styles.emptyIconCircle,
+                  {
+                    backgroundColor: theme.accent + '15',
+                    borderColor: theme.accent + '35',
+                  },
+                ]}
+              >
+                {searchQuery ? (
+                  <MaterialIcons name="search-off" size={30} color={theme.accent} />
+                ) : categoryFilter === 'in_progress' ? (
+                  <MaterialIcons name="play-circle-outline" size={30} color={theme.accent} />
+                ) : categoryFilter === 'completed' ? (
+                  <MaterialIcons name="check-circle-outline" size={30} color={theme.accent} />
+                ) : (
+                  <MaterialIcons name="headphones" size={30} color={theme.accent} />
+                )}
+              </View>
+
+              {/* Title & Description */}
+              <ThemedText style={styles.emptyTitle}>
                 {searchQuery
-                  ? 'Try searching with a different term'
-                  : 'Tap "+ Import" at the top to add local M4B/MP3/M4A audiobooks.'}
+                  ? 'No Matching Audiobooks'
+                  : categoryFilter === 'in_progress'
+                  ? 'No Audiobooks in Progress'
+                  : categoryFilter === 'completed'
+                  ? 'No Completed Audiobooks'
+                  : 'Your Library is Empty'}
               </ThemedText>
-            </View>
+
+              <ThemedText themeColor="textSecondary" style={styles.emptySubtitle}>
+                {searchQuery
+                  ? `No audiobooks match "${searchQuery}". Try searching with a different term.`
+                  : categoryFilter === 'in_progress'
+                  ? 'You have not started listening to any audiobooks in your library yet.'
+                  : categoryFilter === 'completed'
+                  ? 'You have not completed listening to any audiobooks yet.'
+                  : 'Import your local M4B, MP3, or M4A audiobooks to start listening.'}
+              </ThemedText>
+
+              {/* Action Button */}
+              {searchQuery ? (
+                <Pressable
+                  onPress={() => setSearchQuery('')}
+                  style={({ pressed }) => [
+                    styles.emptyActionBtn,
+                    { backgroundColor: theme.backgroundSelected, opacity: pressed ? 0.8 : 1 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search query"
+                >
+                  <MaterialIcons name="close" size={16} color={theme.text} />
+                  <ThemedText style={styles.emptyActionBtnText}>Clear Search</ThemedText>
+                </Pressable>
+              ) : categoryFilter !== 'all' ? (
+                <Pressable
+                  onPress={() => setCategoryFilter('all')}
+                  style={({ pressed }) => [
+                    styles.emptyActionBtn,
+                    { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Show all audiobooks"
+                >
+                  <MaterialIcons name="library-books" size={16} color="#000" />
+                  <ThemedText style={[styles.emptyActionBtnText, { color: '#000' }]}>
+                    Show All Audiobooks
+                  </ThemedText>
+                </Pressable>
+              ) : (
+                <Pressable
+                  onPress={handleImport}
+                  disabled={isImporting}
+                  style={({ pressed }) => [
+                    styles.emptyActionBtn,
+                    { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Import audiobook"
+                >
+                  {isImporting ? (
+                    <ActivityIndicator size="small" color="#000" />
+                  ) : (
+                    <>
+                      <MaterialIcons name="add" size={18} color="#000" />
+                      <ThemedText style={[styles.emptyActionBtnText, { color: '#000' }]}>
+                        Import Audiobook
+                      </ThemedText>
+                    </>
+                  )}
+                </Pressable>
+              )}
+            </Animated.View>
           ) : viewMode === 'grid' ? (
             /* --- GRID VIEW --- */
             <View style={styles.grid}>
@@ -769,14 +864,54 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Empty state
+  // Redesigned Empty state
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: Spacing.six,
+    paddingHorizontal: Spacing.five,
+    borderRadius: 24,
+    marginTop: Spacing.three,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  emptyIconCircle: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.three,
+    borderWidth: 1,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 6,
+    letterSpacing: -0.2,
+  },
+  emptySubtitle: {
+    textAlign: 'center',
+    fontSize: 13,
+    lineHeight: 19,
+    maxWidth: 280,
+    marginBottom: Spacing.four,
+  },
+  emptyActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one + 2,
     paddingHorizontal: Spacing.four,
-    borderRadius: 18,
-    marginTop: Spacing.two,
+    paddingVertical: Spacing.two + 2,
+    borderRadius: 100,
+  },
+  emptyActionBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
 
   // Grid View

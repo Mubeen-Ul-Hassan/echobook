@@ -283,34 +283,24 @@ async function parseChplBox(
 ): Promise<Omit<ParsedChapter, 'endTime'>[]> {
   try {
     const bytes = await readBytesAt(fileUri, position + headerSize, Math.min(size - headerSize, 2097152));
-    if (bytes.length < 8) return [];
+    if (bytes.length < 5) return [];
     const reader = new BinaryReader(bytes);
 
+    // Nero "chpl" atom layout (matches what ffmpeg/mp4box/m4b-tool write & read):
+    //   uint8  version
+    //   uint24 flags
+    //   uint32 reserved   <- only present when version != 0 (ffmpeg always writes version=1)
+    //   uint8  chapterCount
+    //   per chapter: uint64 startTime (100ns units), uint8 titleLen, char[titleLen] title
     const version = reader.readUint8();
     reader.skip(3); // flags
-
-    let chapterCount = 0;
-    if (version === 1) {
-      reader.skip(1); // reserved
-      chapterCount = reader.readUint32();
-    } else {
-      const b1 = reader.readUint8();
-      const b2 = reader.readUint8();
-      const b3 = reader.readUint8();
-      const b4 = reader.readUint8();
-      if (b1 === 0 && (b2 > 0 || b3 > 0 || b4 > 0)) {
-        chapterCount = (b2 << 16) | (b3 << 8) | b4;
-      } else if (b1 > 0 && b2 === 0 && b3 === 0 && b4 === 0) {
-        chapterCount = b1;
-      } else {
-        chapterCount = (b1 << 24) | (b2 << 16) | (b3 << 8) | b4;
-        if (chapterCount > 2000 || chapterCount <= 0) {
-          chapterCount = b1 || b4;
-        }
-      }
+    if (version !== 0) {
+      reader.skip(4); // reserved 32-bit field
     }
 
-    if (chapterCount <= 0 || chapterCount > 2000) return [];
+    const chapterCount = reader.readUint8();
+
+    if (chapterCount <= 0) return [];
 
     const chapters: Omit<ParsedChapter, 'endTime'>[] = [];
     for (let i = 0; i < chapterCount; i++) {
