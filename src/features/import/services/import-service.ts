@@ -156,9 +156,14 @@ export const importService = {
         }
       }
 
-      // Check if real chapters exist (more than 1 chapter or title doesn't match default "Chapter 1")
+      // Check if real chapters exist or if book was previously auto-segmented into 15-min clips
+      const isAutoSegmented15Min =
+        existingChapters.length > 1 &&
+        existingChapters.every((c, idx) => Math.abs(c.startTime - idx * 900) < 2);
+
       const isAutoSegmentedOnly =
         existingChapters.length <= 1 ||
+        isAutoSegmented15Min ||
         existingChapters.every((c) => /^Chapter \d+$/i.test(c.title));
 
       if (!needsCover && !isAutoSegmentedOnly) {
@@ -184,23 +189,17 @@ export const importService = {
       // Replace Chapters if real embedded chapters were found
       let finalChapters = existingChapters;
       if (parsedData.chapters.length > 0) {
-        const hasRealTitlesOrMultiple =
-          parsedData.chapters.length > 1 ||
-          !/^Chapter \d+$/i.test(parsedData.chapters[0]?.title || '');
-
-        if (hasRealTitlesOrMultiple) {
-          const newChapters: ChapterRecord[] = parsedData.chapters.map((ch, idx) => ({
-            id: `${bookId}_ch_${idx}`,
-            bookId,
-            title: ch.title,
-            startTime: ch.startTime,
-            endTime: ch.endTime,
-            duration: ch.endTime - ch.startTime,
-            order: idx,
-          }));
-          await dbService.replaceBookChapters(db, bookId, newChapters);
-          finalChapters = newChapters;
-        }
+        const newChapters: ChapterRecord[] = parsedData.chapters.map((ch, idx) => ({
+          id: `${bookId}_ch_${idx}`,
+          bookId,
+          title: ch.title,
+          startTime: ch.startTime,
+          endTime: ch.endTime,
+          duration: ch.endTime - ch.startTime,
+          order: idx,
+        }));
+        await dbService.replaceBookChapters(db, bookId, newChapters);
+        finalChapters = newChapters;
       }
 
       const updatedBook = await dbService.getAudiobookById(db, bookId);

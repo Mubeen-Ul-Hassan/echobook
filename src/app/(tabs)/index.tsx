@@ -342,51 +342,7 @@ export default function HomeScreen() {
           </Animated.View>
         )}
 
-        {/* ── Recently Added Shelf ── */}
-        {books.length > 0 && !searchQuery && (
-          <Animated.View entering={FadeInDown.delay(150).duration(300)} style={styles.sectionContainer}>
-            <ThemedText type="smallBold" themeColor="textSecondary" style={styles.sectionTitleText}>
-              RECENTLY ADDED
-            </ThemedText>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.recentShelf}
-            >
-              {books.slice(0, 6).map((book) => (
-                <Pressable
-                  key={book.id}
-                  style={({ pressed }) => [
-                    styles.recentCard,
-                    { opacity: pressed ? 0.85 : 1 },
-                  ]}
-                  onPress={() => router.push(`/book/${book.id}` as Href)}
-                >
-                  <View style={styles.recentCoverWrapper}>
-                    {book.coverPath ? (
-                      <Image source={{ uri: book.coverPath }} style={styles.recentCover} />
-                    ) : (
-                      <View style={[styles.recentCoverPlaceholder, { backgroundColor: theme.backgroundElement }]}>
-                        <MaterialIcons name="graphic-eq" size={32} color={theme.textSecondary} />
-                      </View>
-                    )}
-                    <View style={styles.durationBadge}>
-                      <ThemedText style={styles.durationBadgeText}>
-                        {formatDuration(book.duration)}
-                      </ThemedText>
-                    </View>
-                  </View>
-                  <ThemedText numberOfLines={1} style={styles.recentBookTitle}>
-                    {book.title}
-                  </ThemedText>
-                  <ThemedText numberOfLines={1} type="small" themeColor="textSecondary">
-                    {book.author || 'Unknown Author'}
-                  </ThemedText>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </Animated.View>
-        )}
+
 
         {/* ── All Audiobooks Section ── */}
         <Animated.View entering={FadeInDown.delay(200).duration(300)} style={styles.sectionContainer}>

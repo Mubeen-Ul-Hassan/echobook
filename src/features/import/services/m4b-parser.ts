@@ -293,11 +293,23 @@ async function parseChplBox(
       reader.skip(1); // reserved
       chapterCount = reader.readUint32();
     } else {
-      chapterCount = reader.readUint8();
-      if (chapterCount === 0) {
-        chapterCount = reader.readUint32();
+      const b1 = reader.readUint8();
+      const b2 = reader.readUint8();
+      const b3 = reader.readUint8();
+      const b4 = reader.readUint8();
+      if (b1 === 0 && (b2 > 0 || b3 > 0 || b4 > 0)) {
+        chapterCount = (b2 << 16) | (b3 << 8) | b4;
+      } else if (b1 > 0 && b2 === 0 && b3 === 0 && b4 === 0) {
+        chapterCount = b1;
+      } else {
+        chapterCount = (b1 << 24) | (b2 << 16) | (b3 << 8) | b4;
+        if (chapterCount > 2000 || chapterCount <= 0) {
+          chapterCount = b1 || b4;
+        }
       }
     }
+
+    if (chapterCount <= 0 || chapterCount > 2000) return [];
 
     const chapters: Omit<ParsedChapter, 'endTime'>[] = [];
     for (let i = 0; i < chapterCount; i++) {
@@ -307,7 +319,8 @@ async function parseChplBox(
       const titleLen = reader.readUint8();
 
       if (!reader.hasRemaining(titleLen)) break;
-      const title = reader.readUtf8String(titleLen) || `Chapter ${i + 1}`;
+      const rawTitle = reader.readUtf8String(titleLen) || `Chapter ${i + 1}`;
+      const title = rawTitle.replace(/^\uFEFF/, '').trim() || `Chapter ${i + 1}`;
       chapters.push({ title, startTime });
     }
 
@@ -576,6 +589,10 @@ async function parseQuickTimeChapters(
             r.offset = 0;
             title = r.readUtf8String(sampleBytes.length);
           }
+          title = title
+            .replace(/^\uFEFF/, '')
+            .replace(/[\x00-\x1F\x7F-\x9F]/g, ' ')
+            .trim();
         }
       }
 
@@ -611,7 +628,9 @@ async function searchAtomInMoov(
     }
 
     if (['udta', 'meta', 'moov', 'trak'].includes(header.type)) {
-      const res = await searchAtomInMoov(fileUri, pos, header.size, header.headerSize, targetType, depth + 1);
+      // In ISO BMFF / QuickTime, 'meta' is a FullBox (header + 4 bytes version/flags)
+      const subHeaderSize = header.type === 'meta' ? header.headerSize + 4 : header.headerSize;
+      const res = await searchAtomInMoov(fileUri, pos, header.size, subHeaderSize, targetType, depth + 1);
       if (res) return res;
     }
 
@@ -965,14 +984,14 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
 
         while (tagPos < ilstEnd) {
           const keyHeader = await readAtomHeader(fileUri, tagPos);
-          if (!keyHeader || keyHeader.size === 0) break;
+          if (!keyHeader || keyHeader.size === 0 || keyHeader.size > ilstEnd - tagPos) break;
 
           const keyEnd = tagPos + keyHeader.size;
           let subPos = tagPos + keyHeader.headerSize;
 
           while (subPos < keyEnd) {
             const subHeader = await readAtomHeader(fileUri, subPos);
-            if (!subHeader || subHeader.size === 0) break;
+            if (!subHeader || subHeader.size === 0 || subHeader.size > keyEnd - subPos) break;
 
             if (subHeader.type === 'data') {
               const dataBytes = await readBytesAt(
@@ -990,17 +1009,23 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
                   const mime = detectImageMimeType(imgPayload) || 'image/jpeg';
                   result.coverBase64 = bytesToBase64(imgPayload);
                   result.coverType = mime;
-                } else if (typeFlag === 1) {
+                } else if (typeFlag === 1 || typeFlag === 0 || typeFlag === 21) {
                   const rData = new BinaryReader(dataBytes);
                   rData.skip(8);
                   const text = rData.readUtf8String(dataBytes.length - 8);
 
-                  if (['©nam', '©NAM', 'nam'].includes(key)) result.title = text;
-                  else if (['©ART', '©art', 'ART', 'art'].includes(key)) result.author = text;
-                  else if (['©alb', '©ALB', 'alb'].includes(key)) result.album = text;
-                  else if (['©des', 'desc'].includes(key)) result.description = text;
-                  else if (['©gen', 'genre'].includes(key)) result.genre = text;
-                  else if (['©day', 'year'].includes(key)) {
+                  const normKey = key.replace(/[\xA9\xA9\u00A9]/g, '©');
+                  if (['©nam', 'nam', 'TITLE', 'title'].includes(normKey) || key.includes('nam')) {
+                    if (text) result.title = text;
+                  } else if (['©ART', '©art', 'ART', 'art', 'ARTIST', 'artist'].includes(normKey) || key.includes('ART') || key.includes('art')) {
+                    if (text) result.author = text;
+                  } else if (['©alb', '©ALB', 'alb', 'ALBUM', 'album'].includes(normKey) || key.includes('alb')) {
+                    if (text) result.album = text;
+                  } else if (['©des', 'desc', 'DESCRIPTION', 'description'].includes(normKey) || key.includes('des')) {
+                    if (text) result.description = text;
+                  } else if (['©gen', 'genre', 'GENRE'].includes(normKey) || key.includes('gen')) {
+                    if (text) result.genre = text;
+                  } else if (['©day', 'year', 'DATE', 'date'].includes(normKey) || key.includes('day')) {
                     const match = text.match(/\d{4}/);
                     if (match) result.year = parseInt(match[0], 10);
                   }
@@ -1037,8 +1062,8 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
     }
   }
 
-  // Fallback auto-segmentation if no chapters found or 1 chapter covering > 10 mins (600s)
-  if (result.chapters.length === 0 || (result.chapters.length === 1 && result.duration > 600)) {
+  // Fallback auto-segmentation ONLY if no chapters were found at all
+  if (result.chapters.length === 0) {
     result.chapters = autoSegmentChapters(result.duration);
   }
 

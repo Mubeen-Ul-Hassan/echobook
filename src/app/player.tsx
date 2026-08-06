@@ -204,8 +204,9 @@ function SeekBar({
   accentColor,
   trackColor,
 }: SeekBarProps) {
-  const [isDragging, setIsDragging] = useState(false);
-  const barXRef = useRef<number>(0);
+  const isDraggingRef = useRef(false);
+  const justSoughtRef = useRef(false);
+  const lockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isChapterMode = mode === 'chapter';
   const effectiveStart = isChapterMode ? chapterStart : 0;
@@ -214,17 +215,17 @@ function SeekBar({
   const currentOffset = Math.max(0, Math.min(effectiveDuration, position - effectiveStart));
   const currentRatio = currentOffset / effectiveDuration;
 
-  // Reanimated shared value for smooth interpolation between 250ms updates
+  // Reanimated shared value for smooth interpolation between status updates
   const progressSV = useSharedValue(currentRatio);
 
   useEffect(() => {
-    if (!isDragging && effectiveDuration > 0) {
+    if (!isDraggingRef.current && !justSoughtRef.current && effectiveDuration > 0) {
       progressSV.value = withTiming(Math.min(1, Math.max(0, currentRatio)), {
         duration: 240,
         easing: Easing.linear,
       });
     }
-  }, [currentRatio, effectiveDuration, isDragging, progressSV]);
+  }, [currentRatio, effectiveDuration, progressSV]);
 
   const fillStyle = useAnimatedStyle(() => ({
     width: progressSV.value * SEEK_BAR_WIDTH,
@@ -240,26 +241,38 @@ function SeekBar({
       ? ((chapterEnd - chapterStart) / duration) * SEEK_BAR_WIDTH
       : SEEK_BAR_WIDTH;
 
+  const updateProgressFromEvent = (evt: any) => {
+    const locX = evt.nativeEvent.locationX;
+    const ratio = Math.min(1, Math.max(0, locX / SEEK_BAR_WIDTH));
+    progressSV.value = ratio;
+    return ratio;
+  };
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (evt) => {
-        setIsDragging(true);
-        const ratio = Math.min(1, Math.max(0, (evt.nativeEvent.pageX - barXRef.current) / SEEK_BAR_WIDTH));
-        progressSV.value = ratio;
+        isDraggingRef.current = true;
+        if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+        updateProgressFromEvent(evt);
       },
       onPanResponderMove: (evt) => {
-        const ratio = Math.min(1, Math.max(0, (evt.nativeEvent.pageX - barXRef.current) / SEEK_BAR_WIDTH));
-        progressSV.value = ratio;
+        updateProgressFromEvent(evt);
       },
       onPanResponderRelease: (evt) => {
-        const ratio = Math.min(1, Math.max(0, (evt.nativeEvent.pageX - barXRef.current) / SEEK_BAR_WIDTH));
-        setIsDragging(false);
+        const ratio = updateProgressFromEvent(evt);
+        isDraggingRef.current = false;
+        justSoughtRef.current = true;
         onSeek(effectiveStart + ratio * effectiveDuration);
+
+        if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
+        lockTimerRef.current = setTimeout(() => {
+          justSoughtRef.current = false;
+        }, 500);
       },
       onPanResponderTerminate: () => {
-        setIsDragging(false);
+        isDraggingRef.current = false;
       },
     }),
   ).current;
@@ -267,12 +280,6 @@ function SeekBar({
   return (
     <View
       style={styles.seekBarHitArea}
-      onLayout={(e) => {
-        const el = e.target as unknown as { measure: Function };
-        el.measure((_x: number, _y: number, _w: number, _h: number, pageX: number) => {
-          barXRef.current = pageX;
-        });
-      }}
       accessibilityRole="adjustable"
       accessibilityLabel={`Progress: ${formatTime(currentOffset)} of ${formatTime(effectiveDuration)}`}
       accessibilityValue={{ min: 0, max: effectiveDuration, now: Math.floor(currentOffset) }}

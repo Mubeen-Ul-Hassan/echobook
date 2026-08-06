@@ -91,6 +91,8 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const lastSavedPositionRef = useRef<number>(0);
   const prevPlayingRef = useRef<boolean>(false);
   const isLoadingNewBookRef = useRef<boolean>(false);
+  const isSeekingRef = useRef<boolean>(false);
+  const seekTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ---------------------------------------------------------------------------
   // 1. Initialise audio session on mount and restore last session
@@ -148,7 +150,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     setIsPlaying(status.playing);
 
     if (status.isLoaded) {
-      setPosition(status.currentTime);
+      if (!isSeekingRef.current) {
+        setPosition(status.currentTime);
+      }
 
       const realDuration = status.duration;
       if (realDuration && realDuration > 0) {
@@ -466,9 +470,15 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
 
   const seekTo = useCallback(
     async (seconds: number): Promise<void> => {
+      isSeekingRef.current = true;
+      if (seekTimerRef.current) clearTimeout(seekTimerRef.current);
+      setPosition(seconds);
       await player.seekTo(seconds);
+      seekTimerRef.current = setTimeout(() => {
+        isSeekingRef.current = false;
+      }, 350);
     },
-    [player],
+    [player, setPosition],
   );
 
   const skipForward = useCallback(
