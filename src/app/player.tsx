@@ -1258,8 +1258,8 @@ const styles = StyleSheet.create({
   // Info
   infoSection: {
     paddingHorizontal: Spacing.four,
-    marginTop: Spacing.five + Spacing.two, // 40px margin from cover art
-    paddingBottom: Spacing.two,
+    marginTop: Spacing.six,
+    paddingBottom: 2,
     alignItems: 'center',
   },
   chapterSelectorRow: {
@@ -1298,9 +1298,9 @@ const styles = StyleSheet.create({
   },
 
   // Seek bar
-  seekSection: { paddingHorizontal: Spacing.four, paddingBottom: Spacing.two },
+  seekSection: { paddingHorizontal: Spacing.four, paddingBottom: 0 },
   seekBarHitArea: {
-    height: 36, justifyContent: 'center', position: 'relative', marginBottom: 2,
+    height: 32, justifyContent: 'center', position: 'relative', marginBottom: 0,
   },
   seekTrack: {
     height: 5, borderRadius: 2.5, overflow: 'hidden', position: 'relative',
@@ -1314,14 +1314,14 @@ const styles = StyleSheet.create({
   },
   timeRow: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    marginTop: 2, marginBottom: Spacing.two,
+    marginTop: 2, marginBottom: 2,
   },
   chapterProgressLabel: { fontSize: 11 },
 
   // Controls
   controls: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: Spacing.four, paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.four, paddingVertical: 4,
   },
   controlBtn: {
     alignItems: 'center',
@@ -1354,11 +1354,10 @@ const styles = StyleSheet.create({
   // Bottom toolbar
   bottomRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
-    gap: Spacing.three,
+    justifyContent: 'space-around',
     paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.two,
+    paddingTop: 2,
   },
   bottomChip: {
     flexDirection: 'row',
