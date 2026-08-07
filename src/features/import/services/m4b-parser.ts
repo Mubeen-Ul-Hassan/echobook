@@ -1,4 +1,4 @@
-import * as FileSystem from 'expo-file-system/legacy';
+import { File, FileMode, type FileHandle } from 'expo-file-system';
 
 // --- Interfaces & Types ---
 
@@ -23,40 +23,6 @@ export interface ParsedM4bData {
 }
 
 // --- Binary & Base64 Helpers ---
-
-function base64ToBytes(base64: string): Uint8Array {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const lookup = new Uint8Array(256);
-  for (let i = 0; i < chars.length; i++) {
-    lookup[chars.charCodeAt(i)] = i;
-  }
-
-  let bufferLength = base64.length * 0.75;
-  if (base64[base64.length - 1] === '=') {
-    bufferLength--;
-    if (base64[base64.length - 2] === '=') {
-      bufferLength--;
-    }
-  }
-
-  const bytes = new Uint8Array(bufferLength);
-  let p = 0;
-  for (let i = 0; i < base64.length; i += 4) {
-    const b1 = lookup[base64.charCodeAt(i)];
-    const b2 = lookup[base64.charCodeAt(i + 1)];
-    const b3 = lookup[base64.charCodeAt(i + 2)];
-    const b4 = lookup[base64.charCodeAt(i + 3)];
-
-    bytes[p++] = (b1 << 2) | (b2 >> 4);
-    if (p < bufferLength) {
-      bytes[p++] = ((b2 & 15) << 4) | (b3 >> 2);
-    }
-    if (p < bufferLength) {
-      bytes[p++] = ((b3 & 3) << 6) | (b4 & 63);
-    }
-  }
-  return bytes;
-}
 
 function bytesToBase64(bytes: Uint8Array): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -220,16 +186,67 @@ class BinaryReader {
 }
 
 // --- File Reading Helpers ---
+//
+// CRITICAL: Do NOT use expo-file-system/legacy `readAsStringAsync({ position, length })`.
+// On Android that API takes `position: Int` (signed 32-bit), so seeks past ~2.1 GB fail.
+// Real audiobooks (e.g. Audible Dolby Atmos M4Bs) routinely store `moov` AFTER a multi-GB
+// `mdat`, so metadata/chapters/cover become completely unreadable and the importer falls
+// back to a filename title + 15-minute synthetic chapters.
+//
+// The modern `FileHandle` API uses a 64-bit `offset` (Kotlin Long / JS number) and returns
+// raw `Uint8Array` bytes — that is what we use for every random-access read.
 
-async function readBytesAt(fileUri: string, position: number, length: number): Promise<Uint8Array> {
+let _activeHandle: FileHandle | null = null;
+let _activeUri: string | null = null;
+
+function openParseHandle(fileUri: string): number {
+  const file = new File(fileUri);
+  if (!file.exists) {
+    throw new Error(`File does not exist: ${fileUri}`);
+  }
+  // Prefer the open handle's size; File.size is also a Long under the hood.
+  _activeHandle = file.open(FileMode.ReadOnly);
+  _activeUri = fileUri;
+  const size = _activeHandle.size ?? file.size;
+  if (!size || size <= 0) {
+    closeParseHandle();
+    throw new Error(`Unable to determine file size: ${fileUri}`);
+  }
+  return size;
+}
+
+function closeParseHandle() {
+  if (_activeHandle) {
+    try {
+      _activeHandle.close();
+    } catch {
+      // ignore close errors
+    }
+  }
+  _activeHandle = null;
+  _activeUri = null;
+}
+
+function readBytesAt(fileUri: string, position: number, length: number): Uint8Array {
   try {
-    const base64 = await FileSystem.readAsStringAsync(fileUri, {
-      encoding: FileSystem.EncodingType.Base64,
-      position,
-      length,
-    });
-    return base64ToBytes(base64);
-  } catch {
+    if (!_activeHandle || _activeUri !== fileUri) {
+      // Safety: reopen if a helper is somehow called outside a parse session
+      closeParseHandle();
+      openParseHandle(fileUri);
+    }
+    if (!_activeHandle || length <= 0) return new Uint8Array(0);
+
+    // Clamp to remaining file size so we never ask for more bytes than exist
+    const fileSize = _activeHandle.size ?? 0;
+    if (position < 0 || position >= fileSize) return new Uint8Array(0);
+    const maxLen = Math.min(length, fileSize - position);
+    if (maxLen <= 0) return new Uint8Array(0);
+
+    _activeHandle.offset = position;
+    const bytes = _activeHandle.readBytes(maxLen);
+    return bytes ?? new Uint8Array(0);
+  } catch (err) {
+    console.warn('[m4b-parser] readBytesAt failed', { position, length, err });
     return new Uint8Array(0);
   }
 }
@@ -243,8 +260,8 @@ interface AtomHeader {
   position?: number;
 }
 
-async function readAtomHeader(fileUri: string, position: number): Promise<AtomHeader | null> {
-  const bytes = await readBytesAt(fileUri, position, 8);
+function readAtomHeader(fileUri: string, position: number): AtomHeader | null {
+  const bytes = readBytesAt(fileUri, position, 8);
   if (bytes.length < 8) return null;
 
   let size =
@@ -254,7 +271,7 @@ async function readAtomHeader(fileUri: string, position: number): Promise<AtomHe
 
   if (size === 1) {
     // 64-bit size
-    const extBytes = await readBytesAt(fileUri, position + 8, 8);
+    const extBytes = readBytesAt(fileUri, position + 8, 8);
     if (extBytes.length === 8) {
       const high =
         ((extBytes[0] << 24) >>> 0) +
@@ -282,7 +299,7 @@ async function parseChplBox(
   headerSize: number
 ): Promise<Omit<ParsedChapter, 'endTime'>[]> {
   try {
-    const bytes = await readBytesAt(fileUri, position + headerSize, Math.min(size - headerSize, 2097152));
+    const bytes = readBytesAt(fileUri, position + headerSize, Math.min(size - headerSize, 2097152));
     if (bytes.length < 5) return [];
     const reader = new BinaryReader(bytes);
 
@@ -349,7 +366,7 @@ async function parseQuickTimeChapters(
 
     // Scan tracks inside moov
     while (pos < moovEnd) {
-      const header = await readAtomHeader(fileUri, pos);
+      const header = readAtomHeader(fileUri, pos);
       if (!header || header.size === 0) break;
 
       if (header.type === 'trak') {
@@ -359,11 +376,11 @@ async function parseQuickTimeChapters(
         let handlerType = '';
 
         while (subPos < trakEnd) {
-          const subHeader = await readAtomHeader(fileUri, subPos);
+          const subHeader = readAtomHeader(fileUri, subPos);
           if (!subHeader || subHeader.size === 0) break;
 
           if (subHeader.type === 'tkhd') {
-            const tkhdBytes = await readBytesAt(fileUri, subPos + subHeader.headerSize, 24);
+            const tkhdBytes = readBytesAt(fileUri, subPos + subHeader.headerSize, 24);
             if (tkhdBytes.length >= 24) {
               const version = tkhdBytes[0];
               tkhdId = version === 1
@@ -375,10 +392,10 @@ async function parseQuickTimeChapters(
             const trefEnd = subPos + subHeader.size;
             let refPos = subPos + subHeader.headerSize;
             while (refPos < trefEnd) {
-              const refHeader = await readAtomHeader(fileUri, refPos);
+              const refHeader = readAtomHeader(fileUri, refPos);
               if (!refHeader || refHeader.size === 0) break;
               if (refHeader.type === 'chap') {
-                const chapBytes = await readBytesAt(fileUri, refPos + refHeader.headerSize, 4);
+                const chapBytes = readBytesAt(fileUri, refPos + refHeader.headerSize, 4);
                 if (chapBytes.length >= 4) {
                   chapterTrackId = ((chapBytes[0] << 24) >>> 0) + (chapBytes[1] << 16) + (chapBytes[2] << 8) + chapBytes[3];
                 }
@@ -389,10 +406,10 @@ async function parseQuickTimeChapters(
             const mdiaEnd = subPos + subHeader.size;
             let mdiaPos = subPos + subHeader.headerSize;
             while (mdiaPos < mdiaEnd) {
-              const mHeader = await readAtomHeader(fileUri, mdiaPos);
+              const mHeader = readAtomHeader(fileUri, mdiaPos);
               if (!mHeader || mHeader.size === 0) break;
               if (mHeader.type === 'hdlr') {
-                const hdlrBytes = await readBytesAt(fileUri, mdiaPos + mHeader.headerSize, 24);
+                const hdlrBytes = readBytesAt(fileUri, mdiaPos + mHeader.headerSize, 24);
                 if (hdlrBytes.length >= 12) {
                   const h1 = String.fromCharCode(hdlrBytes[8], hdlrBytes[9], hdlrBytes[10], hdlrBytes[11]);
                   const h2 = String.fromCharCode(hdlrBytes[4], hdlrBytes[5], hdlrBytes[6], hdlrBytes[7]);
@@ -451,11 +468,11 @@ async function parseQuickTimeChapters(
       const end = containerPos + containerSize;
       let p = containerPos + containerHeaderSize;
       while (p < end) {
-        const h = await readAtomHeader(fileUri, p);
+        const h = readAtomHeader(fileUri, p);
         if (!h || h.size === 0) break;
 
         if (h.type === 'mdhd') {
-          const mdhdBytes = await readBytesAt(fileUri, p + h.headerSize, 32);
+          const mdhdBytes = readBytesAt(fileUri, p + h.headerSize, 32);
           if (mdhdBytes.length >= 20) {
             const version = mdhdBytes[0];
             const r = new BinaryReader(mdhdBytes);
@@ -470,7 +487,7 @@ async function parseQuickTimeChapters(
             }
           }
         } else if (h.type === 'stts') {
-          const sttsBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
+          const sttsBytes = readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
           if (sttsBytes.length >= 8) {
             const r = new BinaryReader(sttsBytes);
             r.skip(4); // version & flags
@@ -485,7 +502,7 @@ async function parseQuickTimeChapters(
             }
           }
         } else if (h.type === 'stsz') {
-          const stszBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
+          const stszBytes = readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
           if (stszBytes.length >= 12) {
             const r = new BinaryReader(stszBytes);
             r.skip(4); // version & flags
@@ -501,7 +518,7 @@ async function parseQuickTimeChapters(
             }
           }
         } else if (h.type === 'stsc') {
-          const stscBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
+          const stscBytes = readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
           if (stscBytes.length >= 8) {
             const r = new BinaryReader(stscBytes);
             r.skip(4); // version & flags
@@ -515,7 +532,7 @@ async function parseQuickTimeChapters(
             }
           }
         } else if (h.type === 'stco') {
-          const stcoBytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
+          const stcoBytes = readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
           if (stcoBytes.length >= 8) {
             const r = new BinaryReader(stcoBytes);
             r.skip(4);
@@ -526,7 +543,7 @@ async function parseQuickTimeChapters(
             }
           }
         } else if (h.type === 'co64') {
-          const co64Bytes = await readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
+          const co64Bytes = readBytesAt(fileUri, p + h.headerSize, Math.min(h.size - h.headerSize, 2097152));
           if (co64Bytes.length >= 8) {
             const r = new BinaryReader(co64Bytes);
             r.skip(4);
@@ -586,7 +603,7 @@ async function parseQuickTimeChapters(
 
       let title = `Chapter ${i + 1}`;
       if (sz > 2) {
-        const sampleBytes = await readBytesAt(fileUri, offset, Math.min(sz, 4096));
+        const sampleBytes = readBytesAt(fileUri, offset, Math.min(sz, 4096));
         if (sampleBytes.length > 2) {
           const r = new BinaryReader(sampleBytes);
           const strLen = r.readUint16();
@@ -627,7 +644,7 @@ async function searchAtomInMoov(
   let pos = startPos + headerSize;
 
   while (pos < end) {
-    const header = await readAtomHeader(fileUri, pos);
+    const header = readAtomHeader(fileUri, pos);
     if (!header || header.size === 0 || header.size > end - pos) break;
 
     if (header.type === targetType) {
@@ -637,7 +654,7 @@ async function searchAtomInMoov(
     if (['udta', 'meta', 'moov', 'trak', 'mdia', 'minf', 'stbl', 'ilst'].includes(header.type)) {
       let subHeaderSize = header.headerSize;
       if (header.type === 'meta') {
-        const checkBytes = await readBytesAt(fileUri, pos + header.headerSize, 8);
+        const checkBytes = readBytesAt(fileUri, pos + header.headerSize, 8);
         if (checkBytes.length >= 8) {
           const typeAt0 = String.fromCharCode(checkBytes[4], checkBytes[5], checkBytes[6], checkBytes[7]);
           const isChildAt0 = /^[a-zA-Z0-9©\xA9\u00A9]{4}$/.test(typeAt0);
@@ -659,7 +676,7 @@ async function searchAtomInMoov(
 
 async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null> {
   try {
-    const headerBytes = await readBytesAt(fileUri, 0, 10);
+    const headerBytes = readBytesAt(fileUri, 0, 10);
     if (headerBytes.length < 10) return null;
 
     if (
@@ -677,7 +694,7 @@ async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null
 
     if (tagSize <= 0) return null;
 
-    const tagBytes = await readBytesAt(fileUri, 10, Math.min(tagSize, 2097152));
+    const tagBytes = readBytesAt(fileUri, 10, Math.min(tagSize, 2097152));
     if (tagBytes.length === 0) return null;
 
     const reader = new BinaryReader(tagBytes);
@@ -845,12 +862,7 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
   };
 
   try {
-    const fileInfo = await FileSystem.getInfoAsync(fileUri);
-    if (!fileInfo.exists) {
-      throw new Error(`File does not exist: ${fileUri}`);
-    }
-
-    const fileSize = fileInfo.size;
+    const fileSize = openParseHandle(fileUri);
 
     // Check for MP3 ID3v2 tags first
     const id3Result = await parseId3v2Metadata(fileUri);
@@ -874,7 +886,7 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
     let moovHeader: AtomHeader | null = null;
 
     while (pos < fileSize) {
-      const header = await readAtomHeader(fileUri, pos);
+      const header = readAtomHeader(fileUri, pos);
       if (!header || header.size === 0) break;
 
       if (header.type === 'moov') {
@@ -891,7 +903,7 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
       const searchStart = Math.max(0, fileSize - 64 * 1024 * 1024);
       let chunkPos = fileSize - 65536;
       while (chunkPos >= searchStart && !moovHeader) {
-        const chunk = await readBytesAt(fileUri, chunkPos, 65536);
+        const chunk = readBytesAt(fileUri, chunkPos, 65536);
         for (let i = 0; i < chunk.length - 8; i++) {
           if (
             chunk[i + 4] === 0x6d && // 'm'
@@ -900,7 +912,7 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
             chunk[i + 7] === 0x76    // 'v'
           ) {
             const absolutePos = chunkPos + i;
-            const h = await readAtomHeader(fileUri, absolutePos);
+            const h = readAtomHeader(fileUri, absolutePos);
             if (h && h.type === 'moov') {
               moovHeader = h;
               moovHeader.position = absolutePos;
@@ -920,11 +932,11 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
       let mPos = moovPosition + moovHeader.headerSize;
 
       while (mPos < moovEnd) {
-        const h = await readAtomHeader(fileUri, mPos);
+        const h = readAtomHeader(fileUri, mPos);
         if (!h || h.size === 0) break;
 
         if (h.type === 'mvhd') {
-          const mvhdBytes = await readBytesAt(fileUri, mPos + h.headerSize, 32);
+          const mvhdBytes = readBytesAt(fileUri, mPos + h.headerSize, 32);
           if (mvhdBytes.length >= 20) {
             const version = mvhdBytes[0];
             const r = new BinaryReader(mvhdBytes);
@@ -1004,20 +1016,20 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
         let tagPos = ilstHeader.position + ilstHeader.headerSize;
 
         while (tagPos < ilstEnd) {
-          const keyHeader = await readAtomHeader(fileUri, tagPos);
+          const keyHeader = readAtomHeader(fileUri, tagPos);
           if (!keyHeader || keyHeader.size === 0 || keyHeader.size > ilstEnd - tagPos) break;
 
           const keyEnd = tagPos + keyHeader.size;
           let subPos = tagPos + keyHeader.headerSize;
 
           while (subPos < keyEnd) {
-            const subHeader = await readAtomHeader(fileUri, subPos);
+            const subHeader = readAtomHeader(fileUri, subPos);
             if (!subHeader || subHeader.size === 0 || subHeader.size > keyEnd - subPos) break;
 
             if (subHeader.type === 'data') {
               // Cover art can legitimately be several MB; text tags stay small.
               const maxRead = keyHeader.type === 'covr' ? 12582912 : 2097152;
-              const dataBytes = await readBytesAt(
+              const dataBytes = readBytesAt(
                 fileUri,
                 subPos + subHeader.headerSize,
                 Math.min(subHeader.size - subHeader.headerSize, maxRead)
@@ -1078,6 +1090,8 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
     }
   } catch (error) {
     console.error('Error parsing audio metadata:', error);
+  } finally {
+    closeParseHandle();
   }
 
   // Fallback title if empty or if it contains raw content URI strings
