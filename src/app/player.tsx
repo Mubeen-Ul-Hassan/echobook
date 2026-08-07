@@ -74,6 +74,16 @@ function formatRemaining(remaining: number, totalDuration: number = 0): string {
   return `-${formatTime(remaining)}`;
 }
 
+function formatRemainingText(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}h ${m}m left`;
+  if (m > 0) return `${m}m ${sec}s left`;
+  return `${sec}s left`;
+}
+
 function formatDuration(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
@@ -699,17 +709,14 @@ export default function PlayerScreen() {
                 {formatTime(displayElapsed)}
               </ThemedText>
             </Pressable>
-            <ThemedText type="small" themeColor="textSecondary" style={styles.chapterProgressLabel}>
-              {currentChapterIndex + 1}/{chapters.length}
-            </ThemedText>
             <Pressable
               onPress={() => setTimeDisplayMode((m) => (m === 'chapter' ? 'book' : 'chapter'))}
               hitSlop={8}
               accessibilityRole="button"
-              accessibilityLabel={`Remaining ${timeDisplayMode} time: ${formatRemaining(displayRemaining, displayTotalDuration)}. Tap to toggle mode.`}
+              accessibilityLabel={`Remaining ${timeDisplayMode} time: ${formatRemainingText(displayRemaining)}. Tap to toggle mode.`}
             >
               <ThemedText type="small" themeColor="textSecondary">
-                {formatRemaining(displayRemaining, displayTotalDuration)}
+                {formatRemainingText(displayRemaining)}
               </ThemedText>
             </Pressable>
           </View>
@@ -1256,15 +1263,20 @@ const styles = StyleSheet.create({
 
   // Info
   infoSection: {
-    paddingHorizontal: Spacing.four, paddingBottom: Spacing.two, position: 'relative',
+    paddingHorizontal: Spacing.four,
+    marginTop: Spacing.five,
+    paddingBottom: Spacing.two,
+    position: 'relative',
+    alignItems: 'center',
   },
   chapterSelectorRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingRight: 36,
+    justifyContent: 'center',
+    paddingHorizontal: 28,
   },
-  chapterTitle: { fontSize: 20, fontWeight: '800', lineHeight: 26, flex: 1 },
-  bookTitle: { fontSize: 14, marginTop: 4 },
+  chapterTitle: { fontSize: 16, fontWeight: '700', lineHeight: 22, textAlign: 'center' },
+  bookTitle: { fontSize: 13, marginTop: 4, textAlign: 'center' },
   chapterList: {
     maxHeight: SCREEN_HEIGHT * 0.45,
     marginVertical: Spacing.two,
@@ -1272,7 +1284,7 @@ const styles = StyleSheet.create({
   chapterItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     paddingVertical: Spacing.two + 2,
     paddingHorizontal: Spacing.three,
     borderRadius: Spacing.two,
@@ -1280,15 +1292,17 @@ const styles = StyleSheet.create({
   },
   chapterItemLeft: {
     flex: 1,
-    marginRight: Spacing.two,
+    alignItems: 'center',
   },
   chapterItemTitle: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
     marginBottom: 2,
+    textAlign: 'center',
   },
   chapterItemTime: {
-    fontSize: 12,
+    fontSize: 11,
+    textAlign: 'center',
   },
   bookmarkQuickBtn: {
     position: 'absolute', right: Spacing.four, top: 0, padding: Spacing.two,
