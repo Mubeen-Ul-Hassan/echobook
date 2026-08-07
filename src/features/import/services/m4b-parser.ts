@@ -392,9 +392,25 @@ async function parseQuickTimeChapters(
               const mHeader = await readAtomHeader(fileUri, mdiaPos);
               if (!mHeader || mHeader.size === 0) break;
               if (mHeader.type === 'hdlr') {
-                const hdlrBytes = await readBytesAt(fileUri, mdiaPos + mHeader.headerSize, 16);
+                const hdlrBytes = await readBytesAt(fileUri, mdiaPos + mHeader.headerSize, 24);
                 if (hdlrBytes.length >= 12) {
-                  handlerType = String.fromCharCode(hdlrBytes[8], hdlrBytes[9], hdlrBytes[10], hdlrBytes[11]);
+                  const h1 = String.fromCharCode(hdlrBytes[8], hdlrBytes[9], hdlrBytes[10], hdlrBytes[11]);
+                  const h2 = String.fromCharCode(hdlrBytes[4], hdlrBytes[5], hdlrBytes[6], hdlrBytes[7]);
+                  handlerType = h1.replace(/\0/g, '') || h2.replace(/\0/g, '');
+                  let rawStr = '';
+                  for (let b = 0; b < hdlrBytes.length; b++) {
+                    if (hdlrBytes[b] >= 32 && hdlrBytes[b] <= 126) {
+                      rawStr += String.fromCharCode(hdlrBytes[b]);
+                    }
+                  }
+                  if (
+                    rawStr.includes('text') ||
+                    rawStr.includes('tx3g') ||
+                    rawStr.includes('subt') ||
+                    rawStr.includes('sbtl')
+                  ) {
+                    handlerType = 'text';
+                  }
                 }
               }
               mdiaPos += mHeader.size;
@@ -606,7 +622,7 @@ async function searchAtomInMoov(
   targetType: string,
   depth: number = 0
 ): Promise<AtomHeader | null> {
-  if (depth > 5) return null;
+  if (depth > 6) return null;
   const end = startPos + size;
   let pos = startPos + headerSize;
 
@@ -618,9 +634,18 @@ async function searchAtomInMoov(
       return { ...header, position: pos };
     }
 
-    if (['udta', 'meta', 'moov', 'trak'].includes(header.type)) {
-      // In ISO BMFF / QuickTime, 'meta' is a FullBox (header + 4 bytes version/flags)
-      const subHeaderSize = header.type === 'meta' ? header.headerSize + 4 : header.headerSize;
+    if (['udta', 'meta', 'moov', 'trak', 'mdia', 'minf', 'stbl', 'ilst'].includes(header.type)) {
+      let subHeaderSize = header.headerSize;
+      if (header.type === 'meta') {
+        const checkBytes = await readBytesAt(fileUri, pos + header.headerSize, 8);
+        if (checkBytes.length >= 8) {
+          const typeAt0 = String.fromCharCode(checkBytes[4], checkBytes[5], checkBytes[6], checkBytes[7]);
+          const isChildAt0 = /^[a-zA-Z0-9©\xA9\u00A9]{4}$/.test(typeAt0);
+          if (!isChildAt0) {
+            subHeaderSize = header.headerSize + 4;
+          }
+        }
+      }
       const res = await searchAtomInMoov(fileUri, pos, header.size, subHeaderSize, targetType, depth + 1);
       if (res) return res;
     }
@@ -1015,19 +1040,31 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
                   const normKey = key.replace(/[\xA9\xA9\u00A9]/g, '©');
                   if (['©nam', 'nam', 'TITLE', 'title'].includes(normKey) || key.includes('nam')) {
                     if (text) result.title = text;
-                  } else if (['©ART', '©art', 'ART', 'art', 'ARTIST', 'artist'].includes(normKey) || key.includes('ART') || key.includes('art')) {
-                    if (text) result.author = text;
-                  } else if (['©wrt', 'wrt', 'COMPOSER', 'composer', 'NARRATOR', 'narrator', '©nrt'].includes(normKey) || key.includes('wrt') || key.includes('nrt')) {
-                    if (text) result.narrator = text;
+                  } else if (
+                    ['©ART', '©art', 'ART', 'art', 'ARTIST', 'artist', 'aART', 'aart', 'album_artist'].includes(normKey) ||
+                    key.includes('ART') ||
+                    key.includes('art')
+                  ) {
+                    if (text && !result.author) result.author = text;
+                  } else if (
+                    ['©wrt', 'wrt', 'COMPOSER', 'composer', 'NARRATOR', 'narrator', '©nrt', 'nrt'].includes(normKey) ||
+                    key.includes('wrt') ||
+                    key.includes('nrt')
+                  ) {
+                    if (text && !result.narrator) result.narrator = text;
                   } else if (['©alb', '©ALB', 'alb', 'ALBUM', 'album'].includes(normKey) || key.includes('alb')) {
-                    if (text) result.album = text;
-                  } else if (['©des', 'desc', 'DESCRIPTION', 'description'].includes(normKey) || key.includes('des')) {
-                    if (text) result.description = text;
+                    if (text && !result.album) result.album = text;
+                  } else if (
+                    ['©des', 'desc', 'DESCRIPTION', 'description', '©cmt', 'cmt', 'comment'].includes(normKey) ||
+                    key.includes('des') ||
+                    key.includes('cmt')
+                  ) {
+                    if (text && !result.description) result.description = text;
                   } else if (['©gen', 'genre', 'GENRE'].includes(normKey) || key.includes('gen')) {
-                    if (text) result.genre = text;
+                    if (text && !result.genre) result.genre = text;
                   } else if (['©day', 'year', 'DATE', 'date'].includes(normKey) || key.includes('day')) {
                     const match = text.match(/\d{4}/);
-                    if (match) result.year = parseInt(match[0], 10);
+                    if (match && !result.year) result.year = parseInt(match[0], 10);
                   }
                 }
               }
