@@ -666,7 +666,6 @@ export default function PlayerScreen() {
             <ThemedText numberOfLines={2} style={styles.chapterTitle}>
               {chapterDisplayTitle}
             </ThemedText>
-            <MaterialIcons name="keyboard-arrow-down" size={24} color={theme.textSecondary} style={{ marginLeft: 4 }} />
           </Pressable>
 
           <ThemedText numberOfLines={1} themeColor="textSecondary" style={styles.bookTitle}>
@@ -1254,7 +1253,7 @@ const styles = StyleSheet.create({
   // Info
   infoSection: {
     paddingHorizontal: Spacing.four,
-    marginTop: Spacing.five,
+    marginTop: Spacing.five + Spacing.two, // 40px margin from cover art
     paddingBottom: Spacing.two,
     alignItems: 'center',
   },
