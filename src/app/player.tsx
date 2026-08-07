@@ -673,16 +673,6 @@ export default function PlayerScreen() {
             {currentBook.title}
             {currentBook.author ? ` · ${currentBook.author}` : ''}
           </ThemedText>
-
-          <Pressable
-            onPress={() => setShowBookmarkSheet(true)}
-            hitSlop={8}
-            style={styles.bookmarkQuickBtn}
-            accessibilityRole="button"
-            accessibilityLabel="Add bookmark at current position"
-          >
-            <MaterialIcons name="bookmark" size={22} color={theme.textSecondary} />
-          </Pressable>
         </Animated.View>
 
         {/* ── Seek Bar ── */}
@@ -1266,14 +1256,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.four,
     marginTop: Spacing.five,
     paddingBottom: Spacing.two,
-    position: 'relative',
     alignItems: 'center',
   },
   chapterSelectorRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 28,
   },
   chapterTitle: { fontSize: 16, fontWeight: '700', lineHeight: 22, textAlign: 'center' },
   bookTitle: { fontSize: 13, marginTop: 4, textAlign: 'center' },
@@ -1303,9 +1291,6 @@ const styles = StyleSheet.create({
   chapterItemTime: {
     fontSize: 11,
     textAlign: 'center',
-  },
-  bookmarkQuickBtn: {
-    position: 'absolute', right: Spacing.four, top: 0, padding: Spacing.two,
   },
 
   // Seek bar
