@@ -261,14 +261,23 @@ export default function BookDetailScreen() {
             </View>
           )}
 
-          {/* Genre Bullet Items */}
+          {/* Modern Premium Genre Tags */}
           {book.genre && (
             <View style={styles.genreContainer}>
               {book.genre.split(',').map((g, idx) => (
-                <View key={idx} style={styles.genreBulletItem}>
-                  <MaterialIcons name="circle" size={6} color={theme.accent} />
-                  <ThemedText style={[styles.genreBulletText, { color: theme.accent }]}>
-                    {g.trim()}
+                <View
+                  key={idx}
+                  style={[
+                    styles.genrePill,
+                    {
+                      backgroundColor: theme.accent + '12',
+                      borderColor: theme.accent + '28',
+                    },
+                  ]}
+                >
+                  <MaterialIcons name="auto-awesome" size={11} color={theme.accent} />
+                  <ThemedText style={[styles.genrePillText, { color: theme.accent }]}>
+                    {g.trim().toUpperCase()}
                   </ThemedText>
                 </View>
               ))}
@@ -597,18 +606,22 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    marginTop: Spacing.two,
+    gap: 8,
+    marginTop: Spacing.two + 2,
   },
-  genreBulletItem: {
+  genrePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 100,
+    borderWidth: 1,
   },
-  genreBulletText: {
-    fontSize: 13,
-    fontWeight: '600',
-    letterSpacing: 0.2,
+  genrePillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
   },
   metaChips: {
     flexDirection: 'row',
