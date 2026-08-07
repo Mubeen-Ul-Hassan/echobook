@@ -407,15 +407,6 @@ export default function PlayerScreen() {
     return () => setIsPlayerVisible(false);
   }, [setIsPlayerVisible]);
 
-  // Cover scale animation tied to play state
-  const coverScale = useSharedValue(isPlaying ? 1 : 0.9);
-  useEffect(() => {
-    coverScale.value = withSpring(isPlaying ? 1 : 0.9, { damping: 12, stiffness: 100 });
-  }, [isPlaying, coverScale]);
-  const coverStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: coverScale.value }],
-  }));
-
   // Start audio on mount if not already playing the correct book
   useEffect(() => {
     if (!currentBook || !chapters.length) return;
@@ -619,7 +610,7 @@ export default function PlayerScreen() {
 
         {/* ── Cover Art ── */}
         <Animated.View entering={FadeIn.duration(300)} style={styles.coverWrapper}>
-          <Animated.View style={[styles.coverContainer, coverStyle]}>
+          <View style={styles.coverContainer}>
             {currentBook.coverPath ? (
               <Image
                 source={{ uri: currentBook.coverPath }}
@@ -639,7 +630,7 @@ export default function PlayerScreen() {
                 <ActivityIndicator size="large" color={theme.accent} />
               </View>
             )}
-          </Animated.View>
+          </View>
         </Animated.View>
 
         {/* ── Book & Chapter Info ── */}
