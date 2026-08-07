@@ -253,26 +253,35 @@ export default function BookDetailScreen() {
             </View>
           )}
 
+          {/* Genre Bullet Items */}
+          {book.genre && (
+            <View style={styles.genreContainer}>
+              {book.genre.split(',').map((g, idx) => (
+                <View key={idx} style={styles.genreBulletItem}>
+                  <MaterialIcons name="circle" size={6} color={theme.accent} />
+                  <ThemedText style={[styles.genreBulletText, { color: theme.accent }]}>
+                    {g.trim()}
+                  </ThemedText>
+                </View>
+              ))}
+            </View>
+          )}
+
           <View style={styles.metaChips}>
             <View style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
               <MaterialIcons name="access-time" size={14} color={theme.textSecondary} />
               <ThemedText type="small" themeColor="textSecondary">{formatDuration(book.duration)}</ThemedText>
             </View>
-            {book.year && (
-              <View style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
-                <MaterialIcons name="calendar-today" size={14} color={theme.textSecondary} />
-                <ThemedText type="small" themeColor="textSecondary">{book.year}</ThemedText>
-              </View>
-            )}
             <View style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
-              <MaterialIcons name="tag" size={14} color={theme.textSecondary} />
+              <MaterialIcons name="format-list-bulleted" size={14} color={theme.textSecondary} />
               <ThemedText type="small" themeColor="textSecondary">
                 {chapters.length} {chapters.length === 1 ? 'chapter' : 'chapters'}
               </ThemedText>
             </View>
-            {book.genre && (
+            {book.year && (
               <View style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
-                <ThemedText type="small" themeColor="textSecondary">{book.genre}</ThemedText>
+                <MaterialIcons name="calendar-today" size={14} color={theme.textSecondary} />
+                <ThemedText type="small" themeColor="textSecondary">{book.year}</ThemedText>
               </View>
             )}
           </View>
@@ -294,13 +303,6 @@ export default function BookDetailScreen() {
                 />
               </View>
             </View>
-          )}
-
-          {/* Description */}
-          {book.description && (
-            <ThemedText themeColor="textSecondary" style={styles.description} numberOfLines={4}>
-              {book.description}
-            </ThemedText>
           )}
         </Animated.View>
 
@@ -563,12 +565,14 @@ const styles = StyleSheet.create({
   metaSection: {
     paddingHorizontal: Spacing.four,
     alignItems: 'center',
+    marginTop: Spacing.two,
   },
   bookTitle: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '800',
     textAlign: 'center',
-    lineHeight: 30,
+    lineHeight: 28,
+    letterSpacing: -0.3,
   },
   metaRow: {
     flexDirection: 'row',
@@ -578,6 +582,25 @@ const styles = StyleSheet.create({
   },
   metaText: {
     fontSize: 15,
+    fontWeight: '500',
+  },
+  genreContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: Spacing.two,
+  },
+  genreBulletItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  genreBulletText: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.2,
   },
   metaChips: {
     flexDirection: 'row',
@@ -589,34 +612,31 @@ const styles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.two + 4,
-    paddingVertical: Spacing.one + 2,
+    gap: 5,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 6,
     borderRadius: 100,
   },
   overallProgress: {
     width: '100%',
-    marginTop: Spacing.three,
+    marginTop: Spacing.four,
+    paddingTop: Spacing.three,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128,128,128,0.12)',
   },
   progressLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   progressBarBg: {
-    height: 4,
-    borderRadius: 2,
+    height: 6,
+    borderRadius: 3,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 2,
-  },
-  description: {
-    marginTop: Spacing.three,
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: 'center',
+    borderRadius: 3,
   },
 
   // --- Actions ---

@@ -49,11 +49,20 @@ export function MiniPlayer() {
   // Calculate safe bottom padding above gesture bar
   const bottomPosition = Math.max(insets.bottom, 12) + Spacing.two;
 
-  // Smooth progress bar calculation
-  const progressRatio =
-    currentBook && currentBook.duration > 0
-      ? Math.min(1, Math.max(0, position / currentBook.duration))
-      : 0;
+  // Smooth progress bar calculation based on current chapter duration
+  const getProgressRatio = () => {
+    if (currentChapter && currentChapter.endTime > currentChapter.startTime) {
+      const chapterDuration = currentChapter.endTime - currentChapter.startTime;
+      const chapterPosition = position - currentChapter.startTime;
+      return Math.min(1, Math.max(0, chapterPosition / chapterDuration));
+    }
+    if (currentBook && currentBook.duration > 0) {
+      return Math.min(1, Math.max(0, position / currentBook.duration));
+    }
+    return 0;
+  };
+
+  const progressRatio = getProgressRatio();
 
   const progressSV = useSharedValue(progressRatio);
   React.useEffect(() => {
