@@ -667,11 +667,6 @@ export default function PlayerScreen() {
               {chapterDisplayTitle}
             </ThemedText>
           </Pressable>
-
-          <ThemedText numberOfLines={1} themeColor="textSecondary" style={styles.bookTitle}>
-            {currentBook.title}
-            {currentBook.author ? ` · ${currentBook.author}` : ''}
-          </ThemedText>
         </Animated.View>
 
         {/* ── Seek Bar ── */}
@@ -706,6 +701,16 @@ export default function PlayerScreen() {
             >
               <ThemedText type="small" themeColor="textSecondary">
                 {formatRemainingText(displayRemaining)}
+              </ThemedText>
+            </Pressable>
+            <Pressable
+              onPress={() => setTimeDisplayMode((m) => (m === 'chapter' ? 'book' : 'chapter'))}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Remaining ${timeDisplayMode} time: ${formatRemaining(displayRemaining, displayTotalDuration)}. Tap to toggle mode.`}
+            >
+              <ThemedText type="small" themeColor="textSecondary">
+                {formatRemaining(displayRemaining, displayTotalDuration)}
               </ThemedText>
             </Pressable>
           </View>
