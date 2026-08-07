@@ -7,11 +7,16 @@ import { AudiobookRecord, ChapterRecord, PlaybackRecord, BookmarkRecord } from '
  */
 async function runInTransaction(db: SQLiteDatabase, action: () => Promise<void>): Promise<void> {
   try {
+    const inTx = await db.isInTransactionAsync();
+    if (inTx) {
+      await action();
+      return;
+    }
     await db.withTransactionAsync(action);
   } catch (err: any) {
     const msg = err?.message || String(err);
-    if (msg.includes('cannot start a transaction')) {
-      await action();
+    if (msg.includes('cannot start a transaction') || msg.includes('cannot rollback')) {
+      await action().catch(() => {});
     } else {
       throw err;
     }
