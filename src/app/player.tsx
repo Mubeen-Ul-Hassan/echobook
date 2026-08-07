@@ -849,10 +849,7 @@ export default function PlayerScreen() {
         </Animated.View>
       </ScrollView>
 
-      {/* ── Autoplay Countdown overlay ── */}
-      {isAutoplayCountdown && (
-        <AutoplayCountdown onSkip={handleAutoplaySkip} onCancel={handleAutoplayCancel} />
-      )}
+
 
       {/* ── Dark Backdrop Overlay for Sheets ── */}
       {(showSpeedSheet || showSleepSheet || showBookmarkSheet) && (

@@ -276,40 +276,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     }
   }, [status.currentTime, chapters, currentBook, currentChapter?.id, setCurrentChapter, player]);
 
-  // ---------------------------------------------------------------------------
-  // 4. Chapter end: trigger autoplay countdown (Milestone 5 feature)
-  //    When audio reaches the end of the current chapter's endTime we pause
-  //    briefly and start the countdown so the user can cancel/skip.
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (
-      !status.isLoaded ||
-      !currentChapter ||
-      isAutoplayCountdown ||
-      isLoadingNewBookRef.current ||
-      currentChapter.endTime <= currentChapter.startTime ||
-      currentChapter.endTime <= 0
-    ) return;
 
-    const isAtChapterEnd =
-      status.currentTime > 0 &&
-      status.currentTime >= currentChapter.endTime - 0.5 &&
-      currentChapter.endTime < (currentBook?.duration ?? Infinity);
-
-    if (isAtChapterEnd && status.playing) {
-      player.pause();
-      startAutoplayCountdown();
-    }
-  }, [
-    status.currentTime,
-    status.playing,
-    status.isLoaded,
-    currentChapter,
-    currentBook,
-    isAutoplayCountdown,
-    player,
-    startAutoplayCountdown,
-  ]);
 
   // Sleep timer countdown: tick every second while playing
   useEffect(() => {
