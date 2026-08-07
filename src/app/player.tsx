@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Image } from 'expo-image';
-import Svg, { Path, Text as SvgText } from 'react-native-svg';
 import { useSQLiteContext } from 'expo-sqlite';
 import { MaterialIcons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -82,64 +81,12 @@ function formatDuration(seconds: number): string {
   return `${m}m`;
 }
 
-function SkipBackIcon({ size = 36, color = '#FFF', seconds = 30 }: { size?: number; color?: string; seconds?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M3.5 9.5C4.8 5.7 8.4 3 12.5 3C17.7 3 22 7.3 22 12.5C22 17.7 17.7 22 12.5 22C8.1 22 4.3 19 3.2 15"
-        stroke={color}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <Path
-        d="M3.5 4.5V9.5H8.5"
-        stroke={color}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <SvgText
-        x="12.2"
-        y="15.5"
-        fontSize="8"
-        fontWeight="800"
-        fill={color}
-        textAnchor="middle"
-      >
-        {seconds}
-      </SvgText>
-    </Svg>
-  );
+function SkipBackIcon({ size = 36, color = '#FFF' }: { size?: number; color?: string; seconds?: number }) {
+  return <MaterialIcons name="replay-30" size={size} color={color} />;
 }
 
-function SkipForwardIcon({ size = 36, color = '#FFF', seconds = 30 }: { size?: number; color?: string; seconds?: number }) {
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="M20.5 9.5C19.2 5.7 15.6 3 11.5 3C6.3 3 2 7.3 2 12.5C2 17.7 6.3 22 11.5 22C15.9 22 19.7 19 20.8 15"
-        stroke={color}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-      />
-      <Path
-        d="M20.5 4.5V9.5H15.5"
-        stroke={color}
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <SvgText
-        x="11.8"
-        y="15.5"
-        fontSize="8"
-        fontWeight="800"
-        fill={color}
-        textAnchor="middle"
-      >
-        {seconds}
-      </SvgText>
-    </Svg>
-  );
+function SkipForwardIcon({ size = 36, color = '#FFF' }: { size?: number; color?: string; seconds?: number }) {
+  return <MaterialIcons name="forward-30" size={size} color={color} />;
 }
 
 // ---------------------------------------------------------------------------
