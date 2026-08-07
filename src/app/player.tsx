@@ -39,7 +39,7 @@ import { Spacing } from '@/constants/theme';
 import { BookmarkRecord } from '@/database/types';
 import { getAudioPlayer } from '@/features/player/services/audio-service';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const COVER_SIZE = SCREEN_WIDTH * 0.72;
 const SEEK_BAR_WIDTH = SCREEN_WIDTH - Spacing.four * 2;
 
@@ -373,6 +373,7 @@ export default function PlayerScreen() {
     skipBackward,
     nextChapter,
     prevChapter,
+    jumpToChapter,
     setSpeed,
     startBook,
   } = usePlayerContext();
@@ -397,6 +398,7 @@ export default function PlayerScreen() {
   const [showSpeedSheet, setShowSpeedSheet] = useState(false);
   const [showSleepSheet, setShowSleepSheet] = useState(false);
   const [showBookmarkSheet, setShowBookmarkSheet] = useState(false);
+  const [showChapterSheet, setShowChapterSheet] = useState(false);
   const [bookmarkNote, setBookmarkNote] = useState('');
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
   const [timeDisplayMode, setTimeDisplayMode] = useState<'chapter' | 'book'>('chapter');
@@ -445,6 +447,11 @@ export default function PlayerScreen() {
   const currentChapterIndex = chapters.findIndex((ch) => ch.id === currentChapter?.id);
   const hasNextChapter = currentChapterIndex < chapters.length - 1;
   const hasPrevChapter = currentChapterIndex > 0;
+
+  const rawChapterTitle = currentChapter?.title ?? (chapters.length > 0 ? chapters[0].title : currentBook?.title ?? '');
+  const chapterDisplayTitle = currentChapterIndex >= 0
+    ? (rawChapterTitle.toLowerCase().startsWith('chapter') ? rawChapterTitle : `Chapter ${currentChapterIndex + 1} - ${rawChapterTitle}`)
+    : rawChapterTitle;
 
   const chapterElapsed = Math.max(0, position - chapterStart);
   const chapterDuration = Math.max(0, chapterEnd - chapterStart);
@@ -506,6 +513,7 @@ export default function PlayerScreen() {
     setShowSpeedSheet(false);
     setShowSleepSheet(false);
     setShowBookmarkSheet(false);
+    setShowChapterSheet(false);
   }, []);
 
   const handleDismissError = useCallback(() => {
@@ -635,13 +643,22 @@ export default function PlayerScreen() {
 
         {/* ── Book & Chapter Info ── */}
         <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.infoSection}>
-          <ThemedText
-            numberOfLines={2}
-            style={styles.chapterTitle}
-            accessibilityRole="header"
+          <Pressable
+            onPress={() => setShowChapterSheet(true)}
+            style={({ pressed }) => [
+              styles.chapterSelectorRow,
+              { opacity: pressed ? 0.75 : 1 },
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel={`Current chapter: ${chapterDisplayTitle}. Tap to view and select chapters.`}
           >
-            {currentChapter?.title ?? currentBook.title}
-          </ThemedText>
+            <MaterialIcons name="format-list-bulleted" size={22} color={theme.accent} style={{ marginRight: 8 }} />
+            <ThemedText numberOfLines={2} style={styles.chapterTitle}>
+              {chapterDisplayTitle}
+            </ThemedText>
+            <MaterialIcons name="keyboard-arrow-down" size={24} color={theme.textSecondary} style={{ marginLeft: 4 }} />
+          </Pressable>
+
           <ThemedText numberOfLines={1} themeColor="textSecondary" style={styles.bookTitle}>
             {currentBook.title}
             {currentBook.author ? ` · ${currentBook.author}` : ''}
@@ -1086,8 +1103,88 @@ export default function PlayerScreen() {
         </Animated.View>
       )}
 
+      {/* ── Chapter Selection Sheet ── */}
+      {showChapterSheet && (
+        <Animated.View
+          entering={SlideInDown.duration(280).easing(Easing.out(Easing.cubic))}
+          exiting={SlideOutDown.duration(200).easing(Easing.in(Easing.cubic))}
+          style={[
+            styles.bottomSheet,
+            {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+              paddingBottom: bottomSafePadding + Spacing.three,
+              maxHeight: SCREEN_HEIGHT * 0.7,
+            },
+          ]}
+        >
+          <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
+          <View style={styles.sheetHeaderRow}>
+            <MaterialIcons name="format-list-bulleted" size={22} color={theme.accent} />
+            <ThemedText style={styles.sheetTitle}>Chapters ({chapters.length})</ThemedText>
+          </View>
+
+          <ScrollView style={styles.chapterList} showsVerticalScrollIndicator={true}>
+            {chapters.map((ch, idx) => {
+              const isActive = ch.id === currentChapter?.id;
+              const chDuration = ch.endTime > ch.startTime ? ch.endTime - ch.startTime : ch.duration;
+              const titleText = ch.title.toLowerCase().startsWith('chapter')
+                ? ch.title
+                : `Chapter ${idx + 1} - ${ch.title}`;
+
+              return (
+                <Pressable
+                  key={ch.id}
+                  onPress={() => {
+                    jumpToChapter(ch);
+                    setShowChapterSheet(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.chapterItem,
+                    {
+                      backgroundColor: isActive ? theme.backgroundSelected : 'transparent',
+                      borderBottomColor: theme.border,
+                      opacity: pressed ? 0.7 : 1,
+                    },
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Select Chapter ${idx + 1}: ${ch.title}`}
+                >
+                  <View style={styles.chapterItemLeft}>
+                    <ThemedText
+                      numberOfLines={1}
+                      style={[
+                        styles.chapterItemTitle,
+                        isActive && { color: theme.accent, fontWeight: '700' },
+                      ]}
+                    >
+                      {titleText}
+                    </ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary" style={styles.chapterItemTime}>
+                      {formatTime(ch.startTime)} {chDuration > 0 ? `· ${formatDuration(chDuration)}` : ''}
+                    </ThemedText>
+                  </View>
+                  {isActive && (
+                    <MaterialIcons name="graphic-eq" size={20} color={theme.accent} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+
+          <Pressable
+            onPress={() => setShowChapterSheet(false)}
+            style={[styles.sheetCloseBtn, { backgroundColor: theme.backgroundSelected }]}
+            accessibilityRole="button"
+            accessibilityLabel="Close chapter selection sheet"
+          >
+            <ThemedText themeColor="textSecondary" style={{ fontWeight: '600' }}>Close</ThemedText>
+          </Pressable>
+        </Animated.View>
+      )}
+
       {/* Dim backdrop for sheets */}
-      {(showSpeedSheet || showSleepSheet || showBookmarkSheet) && (
+      {(showSpeedSheet || showSleepSheet || showBookmarkSheet || showChapterSheet) && (
         <Pressable
           style={styles.dimOverlay}
           onPress={closeAllSheets}
@@ -1161,8 +1258,38 @@ const styles = StyleSheet.create({
   infoSection: {
     paddingHorizontal: Spacing.four, paddingBottom: Spacing.two, position: 'relative',
   },
-  chapterTitle: { fontSize: 22, fontWeight: '800', lineHeight: 28, paddingRight: 40 },
+  chapterSelectorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 36,
+  },
+  chapterTitle: { fontSize: 20, fontWeight: '800', lineHeight: 26, flex: 1 },
   bookTitle: { fontSize: 14, marginTop: 4 },
+  chapterList: {
+    maxHeight: SCREEN_HEIGHT * 0.45,
+    marginVertical: Spacing.two,
+  },
+  chapterItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.two + 2,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.two,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  chapterItemLeft: {
+    flex: 1,
+    marginRight: Spacing.two,
+  },
+  chapterItemTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  chapterItemTime: {
+    fontSize: 12,
+  },
   bookmarkQuickBtn: {
     position: 'absolute', right: Spacing.four, top: 0, padding: Spacing.two,
   },
