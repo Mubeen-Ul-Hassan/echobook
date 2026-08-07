@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
@@ -32,6 +32,9 @@ export default function BookDetailScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
   const router = useRouter();
+
+  const storeBook = usePlaybackStore((s) => s.currentBook);
+  const storePosition = usePlaybackStore((s) => s.position);
 
   const {
     setCurrentBook,
@@ -90,9 +93,16 @@ export default function BookDetailScreen() {
     }
   }, [db, id]);
 
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
+  // Re-fetch database data whenever this screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
+
+  // Live playback position: use active store position if currently listening to this book, else DB saved position
+  const currentPosition =
+    storeBook?.id === id ? storePosition : (playback?.position ?? 0);
 
   // --- Helpers ---
 
@@ -115,20 +125,18 @@ export default function BookDetailScreen() {
   };
 
   const getProgress = () => {
-    if (!book || !playback || book.duration === 0) return 0;
-    return Math.min(1, playback.position / book.duration);
+    if (!book || book.duration === 0) return 0;
+    return Math.min(1, currentPosition / book.duration);
   };
 
   const getChapterProgress = (chapter: ChapterRecord) => {
-    if (!playback) return 0;
-    if (playback.position >= chapter.endTime) return 1;
-    if (playback.position <= chapter.startTime) return 0;
-    return (playback.position - chapter.startTime) / (chapter.endTime - chapter.startTime);
+    if (currentPosition >= chapter.endTime) return 1;
+    if (currentPosition <= chapter.startTime) return 0;
+    return (currentPosition - chapter.startTime) / (chapter.endTime - chapter.startTime);
   };
 
   const isChapterActive = (chapter: ChapterRecord) => {
-    if (!playback) return false;
-    return playback.position >= chapter.startTime && playback.position < chapter.endTime;
+    return currentPosition >= chapter.startTime && currentPosition < chapter.endTime;
   };
 
   // --- Actions ---
@@ -141,11 +149,11 @@ export default function BookDetailScreen() {
     if (chapter) {
       setCurrentChapter(chapter);
       setPosition(chapter.startTime);
-    } else if (playback) {
-      const activeChapter = chapters.find(ch => ch.id === playback.chapterId) || chapters[0] || null;
+    } else if (currentPosition > 0) {
+      const activeChapter = chapters.find(ch => currentPosition >= ch.startTime && currentPosition < ch.endTime) || chapters[0] || null;
       setCurrentChapter(activeChapter);
-      setPosition(playback.position);
-      if (playback.speed) setSpeed(playback.speed);
+      setPosition(currentPosition);
+      if (playback?.speed) setSpeed(playback.speed);
     } else {
       setCurrentChapter(chapters[0] || null);
       setPosition(0);
@@ -287,14 +295,14 @@ export default function BookDetailScreen() {
           </View>
 
           {/* Overall Progress */}
-          {playback && playback.position > 0 && (
+          {currentPosition > 0 && (
             <View style={styles.overallProgress}>
               <View style={styles.progressLabelRow}>
                 <ThemedText type="small" themeColor="textSecondary">
                   {Math.round(progress * 100)}% complete
                 </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
-                  {formatDuration(book.duration - playback.position)} left
+                  {formatDuration(book.duration - currentPosition)} left
                 </ThemedText>
               </View>
               <View style={[styles.progressBarBg, { backgroundColor: theme.backgroundElement }]}>
@@ -315,15 +323,15 @@ export default function BookDetailScreen() {
             ]}
             onPress={() => handlePlay()}
             accessibilityRole="button"
-            accessibilityLabel={playback && playback.position > 0 ? `Resume ${book.title}` : `Play ${book.title}`}
+            accessibilityLabel={currentPosition > 0 ? `Resume ${book.title}` : `Play ${book.title}`}
           >
             <MaterialIcons name="play-arrow" size={22} color="#000" />
             <ThemedText style={styles.primaryButtonText}>
-              {playback && playback.position > 0 ? 'Resume' : 'Play'}
+              {currentPosition > 0 ? 'Resume' : 'Play'}
             </ThemedText>
           </Pressable>
 
-          {playback && playback.position > 0 && (
+          {currentPosition > 0 && (
             <Pressable
               style={({ pressed }) => [
                 styles.secondaryButton,

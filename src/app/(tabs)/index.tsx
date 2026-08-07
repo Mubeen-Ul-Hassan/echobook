@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useRouter, type Href } from 'expo-router';
+import { useRouter, useFocusEffect, type Href } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
@@ -89,9 +89,12 @@ export default function HomeScreen() {
     }
   }, [db]);
 
-  useEffect(() => {
-    loadBooks();
-  }, [loadBooks]);
+  // Load books & playbacks from database whenever home screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadBooks();
+    }, [loadBooks])
+  );
 
   // Handle Import
   const handleImport = async () => {
