@@ -216,6 +216,13 @@ export default function HomeScreen() {
     return Math.min(1, Math.max(0, pb.position / duration));
   };
 
+  // Library stats
+  const totalBooksCount = books.length;
+  const inProgressCount = books.filter(
+    (b) => playbacksMap[b.id]?.position > 0 && playbacksMap[b.id]?.completed === 0
+  ).length;
+  const completedCount = books.filter((b) => playbacksMap[b.id]?.completed === 1).length;
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]} edges={['top', 'left', 'right']}>
       {/* ── Brand Header Bar ── */}
@@ -275,7 +282,7 @@ export default function HomeScreen() {
           )}
         </Animated.View>
 
-        {/* ── Continue Listening Section ── */}
+        {/* ── Continue Listening Section (Glassmorphic Hero) ── */}
         {recentPlayback && !searchQuery && (
           <Animated.View entering={FadeInDown.delay(100).duration(300)} style={styles.sectionContainer}>
             <View style={styles.sectionHeaderRow}>
@@ -284,68 +291,151 @@ export default function HomeScreen() {
                 CONTINUE LISTENING
               </ThemedText>
             </View>
-            <Pressable
-              onPress={() => handleStartBook(recentPlayback.bookId)}
-              style={({ pressed }) => [
-                styles.continueCard,
+
+            <View
+              style={[
+                styles.heroContainer,
                 {
-                  backgroundColor: theme.backgroundElement,
                   borderColor: theme.border,
-                  borderWidth: 1,
-                  opacity: pressed ? 0.92 : 1,
+                  backgroundColor: theme.backgroundElement,
                 },
               ]}
-              accessibilityRole="button"
-              accessibilityLabel={`Continue listening to ${recentPlayback.title}`}
             >
-              {recentPlayback.coverPath ? (
-                <Image source={{ uri: recentPlayback.coverPath }} style={styles.continueCover} />
-              ) : (
-                <View style={[styles.continueCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
-                  <MaterialIcons name="graphic-eq" size={28} color={theme.textSecondary} />
-                </View>
-              )}
-
-              <View style={styles.continueInfo}>
-                <ThemedText numberOfLines={1} style={styles.continueBookTitle}>
-                  {recentPlayback.title}
-                </ThemedText>
-                <ThemedText numberOfLines={1} themeColor="textSecondary" style={styles.continueAuthor}>
-                  {recentPlayback.author || 'Unknown Author'}
-                </ThemedText>
-
-                <View style={styles.continueProgressRow}>
-                  <MaterialIcons name="access-time" size={14} color={theme.accent} style={{ marginRight: 4 }} />
-                  <ThemedText type="small" style={{ color: theme.accent, fontWeight: '600' }}>
-                    {formatTimeRemaining(recentPlayback.duration - recentPlayback.position)}
-                  </ThemedText>
-                </View>
-
-                {/* Smooth Progress Bar */}
-                <View style={[styles.progressBarBg, { backgroundColor: theme.backgroundSelected }]}>
+              {/* Ambient Blurred Backdrop */}
+              {recentPlayback.coverPath && (
+                <View style={StyleSheet.absoluteFill} pointerEvents="none">
+                  <Image
+                    source={{ uri: recentPlayback.coverPath }}
+                    style={styles.heroAmbientBlur}
+                    blurRadius={25}
+                  />
                   <View
                     style={[
-                      styles.progressBarFill,
-                      {
-                        backgroundColor: theme.accent,
-                        width: `${Math.min(100, Math.max(2, (recentPlayback.position / recentPlayback.duration) * 100))}%`,
-                      },
+                      StyleSheet.absoluteFill,
+                      { backgroundColor: theme.background === '#131315' ? '#131315E0' : '#FFFFFFED' },
                     ]}
                   />
                 </View>
-              </View>
+              )}
 
               <Pressable
-                style={[styles.continuePlayButton, { backgroundColor: theme.accent }]}
                 onPress={() => handleStartBook(recentPlayback.bookId)}
+                style={({ pressed }) => [
+                  styles.heroCardContent,
+                  { opacity: pressed ? 0.94 : 1 },
+                ]}
+                accessibilityRole="button"
+                accessibilityLabel={`Continue listening to ${recentPlayback.title}`}
               >
-                <MaterialIcons name="play-arrow" size={22} color="#000" />
+                {/* Book Cover with Glow */}
+                <View style={styles.heroCoverWrapper}>
+                  {recentPlayback.coverPath ? (
+                    <Image source={{ uri: recentPlayback.coverPath }} style={styles.heroCover} />
+                  ) : (
+                    <View style={[styles.heroCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
+                      <MaterialIcons name="graphic-eq" size={32} color={theme.accent} />
+                    </View>
+                  )}
+                  <View style={[styles.heroBadge, { backgroundColor: theme.accent }]}>
+                    <MaterialIcons name="headphones" size={11} color="#000" />
+                  </View>
+                </View>
+
+                {/* Info & Progress */}
+                <View style={styles.heroInfo}>
+                  <ThemedText numberOfLines={1} style={styles.heroTitle}>
+                    {recentPlayback.title}
+                  </ThemedText>
+                  <ThemedText numberOfLines={1} themeColor="textSecondary" style={styles.heroAuthor}>
+                    {recentPlayback.author || 'Unknown Author'}
+                  </ThemedText>
+
+                  <View style={styles.heroPillRow}>
+                    <View style={[styles.heroTimePill, { backgroundColor: theme.accent + '20' }]}>
+                      <MaterialIcons name="schedule" size={13} color={theme.accent} style={{ marginRight: 4 }} />
+                      <ThemedText type="small" style={{ color: theme.accent, fontWeight: '700', fontSize: 11 }}>
+                        {formatTimeRemaining(recentPlayback.duration - recentPlayback.position)}
+                      </ThemedText>
+                    </View>
+                    <View style={[styles.heroPercentPill, { backgroundColor: theme.backgroundSelected }]}>
+                      <ThemedText type="small" themeColor="textSecondary" style={{ fontWeight: '700', fontSize: 11 }}>
+                        {Math.round(Math.min(100, (recentPlayback.position / (recentPlayback.duration || 1)) * 100))}%
+                      </ThemedText>
+                    </View>
+                  </View>
+
+                  {/* Glassmorphic Progress Bar */}
+                  <View style={[styles.heroProgressBarBg, { backgroundColor: theme.backgroundSelected }]}>
+                    <View
+                      style={[
+                        styles.heroProgressBarFill,
+                        {
+                          backgroundColor: theme.accent,
+                          width: `${Math.min(100, Math.max(3, (recentPlayback.position / recentPlayback.duration) * 100))}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                </View>
+
+                {/* Action Play Button */}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.heroPlayButton,
+                    { backgroundColor: theme.accent, transform: [{ scale: pressed ? 0.92 : 1 }] },
+                  ]}
+                  onPress={() => handleStartBook(recentPlayback.bookId)}
+                >
+                  <MaterialIcons name="play-arrow" size={24} color="#000" />
+                </Pressable>
               </Pressable>
-            </Pressable>
+            </View>
           </Animated.View>
         )}
 
+        {/* ── Listening Stats Summary Widget ── */}
+        {!searchQuery && (
+          <Animated.View entering={FadeInDown.delay(150).duration(300)} style={styles.sectionContainer}>
+            <View style={[styles.statsRowContainer, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+              {/* Stat 1: Total Books */}
+              <View style={styles.statColumn}>
+                <View style={[styles.statIconBadge, { backgroundColor: theme.accent + '18' }]}>
+                  <MaterialIcons name="library-books" size={16} color={theme.accent} />
+                </View>
+                <ThemedText style={styles.statNumber}>{totalBooksCount}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.statLabel}>
+                  Total Books
+                </ThemedText>
+              </View>
 
+              <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
+
+              {/* Stat 2: In Progress */}
+              <View style={styles.statColumn}>
+                <View style={[styles.statIconBadge, { backgroundColor: '#3B82F618' }]}>
+                  <MaterialIcons name="play-circle-outline" size={16} color="#3B82F6" />
+                </View>
+                <ThemedText style={styles.statNumber}>{inProgressCount}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.statLabel}>
+                  In Progress
+                </ThemedText>
+              </View>
+
+              <View style={[styles.statDivider, { backgroundColor: theme.border }]} />
+
+              {/* Stat 3: Completed */}
+              <View style={styles.statColumn}>
+                <View style={[styles.statIconBadge, { backgroundColor: '#10B98118' }]}>
+                  <MaterialIcons name="check-circle-outline" size={16} color="#10B981" />
+                </View>
+                <ThemedText style={styles.statNumber}>{completedCount}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary" style={styles.statLabel}>
+                  Completed
+                </ThemedText>
+              </View>
+            </View>
+          </Animated.View>
+        )}
 
         {/* ── All Audiobooks Section ── */}
         <Animated.View entering={FadeInDown.delay(200).duration(300)} style={styles.sectionContainer}>
@@ -388,6 +478,13 @@ export default function HomeScreen() {
                     : cat === 'in_progress'
                     ? 'In Progress'
                     : 'Completed';
+                const count =
+                  cat === 'all'
+                    ? totalBooksCount
+                    : cat === 'in_progress'
+                    ? inProgressCount
+                    : completedCount;
+
                 return (
                   <Pressable
                     key={cat}
@@ -405,7 +502,7 @@ export default function HomeScreen() {
                         { color: isActive ? '#000' : theme.textSecondary },
                       ]}
                     >
-                      {label}
+                      {label} ({count})
                     </ThemedText>
                   </Pressable>
                 );
@@ -524,115 +621,160 @@ export default function HomeScreen() {
           ) : viewMode === 'grid' ? (
             /* --- GRID VIEW --- */
             <View style={styles.grid}>
-              {filteredBooks.map((book) => {
+              {filteredBooks.map((book, index) => {
                 const ratio = getBookProgressRatio(book.id, book.duration);
                 const pb = playbacksMap[book.id];
                 const isDone = pb?.completed === 1;
+                const percent = Math.round(ratio * 100);
 
                 return (
-                  <Pressable
+                  <Animated.View
                     key={book.id}
-                    style={({ pressed }) => [
-                      styles.gridCard,
-                      { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.88 : 1 },
-                    ]}
-                    onPress={() => router.push(`/book/${book.id}` as Href)}
+                    entering={FadeInDown.delay(index * 40).duration(250)}
                   >
-                    <View style={styles.gridCoverContainer}>
-                      {book.coverPath ? (
-                        <Image source={{ uri: book.coverPath }} style={styles.gridCover} />
-                      ) : (
-                        <View style={[styles.gridCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
-                          <MaterialIcons name="graphic-eq" size={36} color={theme.textSecondary} />
-                        </View>
-                      )}
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.gridCard,
+                        {
+                          backgroundColor: theme.backgroundElement,
+                          borderColor: theme.border,
+                          borderWidth: 1,
+                          opacity: pressed ? 0.88 : 1,
+                          transform: [{ scale: pressed ? 0.98 : 1 }],
+                        },
+                      ]}
+                      onPress={() => router.push(`/book/${book.id}` as Href)}
+                    >
+                      <View style={styles.gridCoverContainer}>
+                        {book.coverPath ? (
+                          <Image source={{ uri: book.coverPath }} style={styles.gridCover} />
+                        ) : (
+                          <View style={[styles.gridCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
+                            <MaterialIcons name="graphic-eq" size={36} color={theme.textSecondary} />
+                          </View>
+                        )}
 
-                      {/* Play overlay badge */}
-                      <Pressable
-                        style={[styles.gridPlayBadge, { backgroundColor: theme.accent }]}
-                        onPress={() => handleStartBook(book.id)}
-                      >
-                        <MaterialIcons name="play-arrow" size={16} color="#000" />
-                      </Pressable>
+                        {/* Progress percentage pill overlay */}
+                        {ratio > 0 && !isDone && (
+                          <View style={[styles.gridProgressBadge, { backgroundColor: theme.accent }]}>
+                            <ThemedText style={styles.gridProgressBadgeText}>
+                              {percent}%
+                            </ThemedText>
+                          </View>
+                        )}
 
-                      {isDone && (
-                        <View style={styles.doneBadge}>
-                          <MaterialIcons name="check-circle" size={16} color="#4ADE80" />
-                        </View>
-                      )}
-                    </View>
+                        {/* Done badge */}
+                        {isDone && (
+                          <View style={styles.doneBadge}>
+                            <MaterialIcons name="check-circle" size={16} color="#4ADE80" />
+                          </View>
+                        )}
 
-                    <View style={styles.gridInfo}>
-                      <ThemedText numberOfLines={1} style={styles.gridBookTitle}>
-                        {book.title}
-                      </ThemedText>
-                      <ThemedText numberOfLines={1} type="small" themeColor="textSecondary" style={styles.gridAuthor}>
-                        {book.author || 'Unknown Author'}
-                      </ThemedText>
-                      <View style={styles.gridMetaRow}>
-                        <ThemedText type="small" themeColor="textSecondary">
-                          {formatDuration(book.duration)}
-                        </ThemedText>
+                        {/* Play overlay badge */}
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.gridPlayBadge,
+                            { backgroundColor: theme.accent, opacity: pressed ? 0.8 : 1 },
+                          ]}
+                          onPress={() => handleStartBook(book.id)}
+                        >
+                          <MaterialIcons name="play-arrow" size={16} color="#000" />
+                        </Pressable>
                       </View>
 
-                      {/* Progress Bar */}
-                      {ratio > 0 && (
-                        <View style={[styles.cardProgressBg, { backgroundColor: theme.backgroundSelected }]}>
-                          <View style={[styles.cardProgressFill, { backgroundColor: theme.accent, width: `${ratio * 100}%` }]} />
+                      <View style={styles.gridInfo}>
+                        <ThemedText numberOfLines={1} style={styles.gridBookTitle}>
+                          {book.title}
+                        </ThemedText>
+                        <ThemedText numberOfLines={1} type="small" themeColor="textSecondary" style={styles.gridAuthor}>
+                          {book.author || 'Unknown Author'}
+                        </ThemedText>
+                        <View style={styles.gridMetaRow}>
+                          <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 11 }}>
+                            {formatDuration(book.duration)}
+                          </ThemedText>
                         </View>
-                      )}
-                    </View>
-                  </Pressable>
+
+                        {/* Progress Bar */}
+                        {ratio > 0 && (
+                          <View style={[styles.cardProgressBg, { backgroundColor: theme.backgroundSelected }]}>
+                            <View style={[styles.cardProgressFill, { backgroundColor: theme.accent, width: `${ratio * 100}%` }]} />
+                          </View>
+                        )}
+                      </View>
+                    </Pressable>
+                  </Animated.View>
                 );
               })}
             </View>
           ) : (
             /* --- LIST VIEW --- */
             <View style={styles.listContainer}>
-              {filteredBooks.map((book) => {
+              {filteredBooks.map((book, index) => {
                 const ratio = getBookProgressRatio(book.id, book.duration);
                 const pb = playbacksMap[book.id];
                 const isDone = pb?.completed === 1;
+                const percent = Math.round(ratio * 100);
 
                 return (
-                  <Pressable
+                  <Animated.View
                     key={book.id}
-                    style={({ pressed }) => [
-                      styles.listRow,
-                      { backgroundColor: theme.backgroundElement, opacity: pressed ? 0.88 : 1 },
-                    ]}
-                    onPress={() => router.push(`/book/${book.id}` as Href)}
+                    entering={FadeInDown.delay(index * 30).duration(200)}
                   >
-                    {book.coverPath ? (
-                      <Image source={{ uri: book.coverPath }} style={styles.listCover} />
-                    ) : (
-                      <View style={[styles.listCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
-                        <MaterialIcons name="graphic-eq" size={22} color={theme.textSecondary} />
-                      </View>
-                    )}
-
-                    <View style={styles.listInfo}>
-                      <ThemedText numberOfLines={1} style={styles.listTitle}>
-                        {book.title}
-                      </ThemedText>
-                      <ThemedText numberOfLines={1} type="small" themeColor="textSecondary">
-                        {book.author || 'Unknown Author'} · {formatDuration(book.duration)}
-                      </ThemedText>
-
-                      {ratio > 0 && (
-                        <View style={[styles.listProgressBg, { backgroundColor: theme.backgroundSelected }]}>
-                          <View style={[styles.listProgressFill, { backgroundColor: theme.accent, width: `${ratio * 100}%` }]} />
-                        </View>
-                      )}
-                    </View>
-
                     <Pressable
-                      style={[styles.listPlayBtn, { backgroundColor: theme.accent }]}
-                      onPress={() => handleStartBook(book.id)}
+                      style={({ pressed }) => [
+                        styles.listRow,
+                        {
+                          backgroundColor: theme.backgroundElement,
+                          borderColor: theme.border,
+                          borderWidth: 1,
+                          opacity: pressed ? 0.88 : 1,
+                        },
+                      ]}
+                      onPress={() => router.push(`/book/${book.id}` as Href)}
                     >
-                      <MaterialIcons name="play-arrow" size={16} color="#000" />
+                      <View style={{ position: 'relative' }}>
+                        {book.coverPath ? (
+                          <Image source={{ uri: book.coverPath }} style={styles.listCover} />
+                        ) : (
+                          <View style={[styles.listCoverPlaceholder, { backgroundColor: theme.backgroundSelected }]}>
+                            <MaterialIcons name="graphic-eq" size={22} color={theme.textSecondary} />
+                          </View>
+                        )}
+                        {isDone && (
+                          <View style={[styles.doneBadge, { top: -2, left: -2, padding: 2 }]}>
+                            <MaterialIcons name="check-circle" size={14} color="#4ADE80" />
+                          </View>
+                        )}
+                      </View>
+
+                      <View style={styles.listInfo}>
+                        <ThemedText numberOfLines={1} style={styles.listTitle}>
+                          {book.title}
+                        </ThemedText>
+                        <ThemedText numberOfLines={1} type="small" themeColor="textSecondary" style={{ fontSize: 12, marginTop: 1 }}>
+                          {book.author || 'Unknown Author'} · {formatDuration(book.duration)}
+                          {ratio > 0 && !isDone ? ` · ${percent}%` : ''}
+                        </ThemedText>
+
+                        {ratio > 0 && (
+                          <View style={[styles.listProgressBg, { backgroundColor: theme.backgroundSelected }]}>
+                            <View style={[styles.listProgressFill, { backgroundColor: theme.accent, width: `${ratio * 100}%` }]} />
+                          </View>
+                        )}
+                      </View>
+
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.listPlayBtn,
+                          { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
+                        ]}
+                        onPress={() => handleStartBook(book.id)}
+                      >
+                        <MaterialIcons name="play-arrow" size={18} color="#000" />
+                      </Pressable>
                     </Pressable>
-                  </Pressable>
+                  </Animated.View>
                 );
               })}
             </View>
@@ -731,63 +873,142 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Continue Listening Card
-  continueCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: Spacing.three,
-    borderRadius: 18,
+  // Glassmorphic Hero Container
+  heroContainer: {
+    borderRadius: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
     position: 'relative',
     marginTop: 4,
   },
-  continueCover: {
-    width: 68,
-    height: 68,
-    borderRadius: 12,
+  heroAmbientBlur: {
+    width: '100%',
+    height: '100%',
+    position: 'absolute',
+    transform: [{ scale: 1.25 }],
+    opacity: 0.5,
   },
-  continueCoverPlaceholder: {
-    width: 68,
-    height: 68,
-    borderRadius: 12,
+  heroCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.three,
+  },
+  heroCoverWrapper: {
+    position: 'relative',
+  },
+  heroCover: {
+    width: 72,
+    height: 72,
+    borderRadius: 14,
+  },
+  heroCoverPlaceholder: {
+    width: 72,
+    height: 72,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  continueInfo: {
+  heroBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#000',
+  },
+  heroInfo: {
     flex: 1,
-    marginLeft: Spacing.three,
-    paddingRight: 44,
+    marginLeft: Spacing.three + 2,
+    marginRight: Spacing.two,
   },
-  continueBookTitle: {
-    fontWeight: '700',
+  heroTitle: {
+    fontWeight: '800',
     fontSize: 16,
+    letterSpacing: -0.3,
   },
-  continueAuthor: {
+  heroAuthor: {
     fontSize: 13,
-    marginTop: 2,
+    marginTop: 1,
   },
-  continueProgressRow: {
+  heroPillRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
     marginTop: 6,
   },
-  progressBarBg: {
+  heroTimePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  heroPercentPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  heroProgressBarBg: {
     height: 4,
     borderRadius: 2,
     marginTop: 8,
     overflow: 'hidden',
   },
-  progressBarFill: {
+  heroProgressBarFill: {
     height: '100%',
     borderRadius: 2,
   },
-  continuePlayButton: {
-    position: 'absolute',
-    right: Spacing.three,
-    width: 42,
-    height: 42,
-    borderRadius: 21,
+  heroPlayButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+
+  // Listening Stats Bar Widget
+  statsRowContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: Spacing.three,
+    paddingHorizontal: Spacing.two,
+    borderRadius: 16,
+    borderWidth: 1,
+  },
+  statColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statIconBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 4,
+  },
+  statNumber: {
+    fontSize: 17,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  statLabel: {
+    fontSize: 11,
+    marginTop: 1,
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
   },
 
   // Recently Added Shelf
@@ -942,6 +1163,19 @@ const styles = StyleSheet.create({
     height: COLUMN_WIDTH * 0.95,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  gridProgressBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  gridProgressBadgeText: {
+    color: '#000',
+    fontSize: 10,
+    fontWeight: '800',
   },
   gridPlayBadge: {
     position: 'absolute',
