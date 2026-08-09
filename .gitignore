@@ -44,3 +44,5 @@ example
 
 # context
 .context/
+.vscode/
+.agents
