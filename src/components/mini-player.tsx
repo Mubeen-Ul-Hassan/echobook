@@ -37,14 +37,13 @@ export function MiniPlayer() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { play, pause, skipForward } = usePlayerContext();
+  const { play, pause, skipForward, stopPlayback } = usePlayerContext();
 
   const currentBook = usePlaybackStore((s) => s.currentBook);
   const currentChapter = usePlaybackStore((s) => s.currentChapter);
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const position = usePlaybackStore((s) => s.position);
   const isPlayerVisible = usePlaybackStore((s) => s.isPlayerVisible);
-  const resetPlayback = usePlaybackStore((s) => s.resetPlayback);
 
   // Calculate safe bottom padding above gesture bar
   const bottomPosition = Math.max(insets.bottom, 12) + Spacing.two;
@@ -157,7 +156,7 @@ export function MiniPlayer() {
 
           {/* Dismiss */}
           <Pressable
-            onPress={resetPlayback}
+            onPress={stopPlayback}
             hitSlop={8}
             style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
             accessibilityRole="button"

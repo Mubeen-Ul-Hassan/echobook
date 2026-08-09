@@ -45,6 +45,7 @@ interface PlayerContextValue {
   prevChapter: () => Promise<void>;
   jumpToChapter: (chapter: ChapterRecord) => Promise<void>;
   setSpeed: (speed: number) => void;
+  stopPlayback: () => Promise<void>;
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null);
@@ -86,6 +87,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   const setCurrentBook = usePlaybackStore((s) => s.setCurrentBook);
   const setChapters = usePlaybackStore((s) => s.setChapters);
   const setSpeed = usePlaybackStore((s) => s.setSpeed);
+  const resetPlayback = usePlaybackStore((s) => s.resetPlayback);
 
   // Ref guards to prevent side-effect loops
   const saveTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -548,6 +550,21 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     [player],
   );
 
+  const stopPlayback = useCallback(async (): Promise<void> => {
+    if (currentBook) {
+      await savePosition(player.currentTime);
+    }
+    player.pause();
+    try {
+      player.clearLockScreenControls();
+      player.setActiveForLockScreen(false);
+    } catch (err) {
+      console.warn('[PlaybackProvider] Failed to clear lock screen controls:', err);
+    }
+    setCurrentUri(null);
+    resetPlayback();
+  }, [player, currentBook, savePosition, resetPlayback]);
+
   const value: PlayerContextValue = useMemo(
     () => ({
       startBook,
@@ -561,6 +578,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       prevChapter,
       jumpToChapter,
       setSpeed: setSpeedFn,
+      stopPlayback,
     }),
     [
       startBook,
@@ -574,6 +592,7 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
       prevChapter,
       jumpToChapter,
       setSpeedFn,
+      stopPlayback,
     ],
   );
 
