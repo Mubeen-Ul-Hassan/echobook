@@ -21,6 +21,7 @@ import {
   loadAudio,
   getCurrentUri,
   setCurrentUri,
+  registerAudioInterruptionListener,
 } from '../services/audio-service';
 
 // ---------------------------------------------------------------------------
@@ -158,13 +159,13 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     if (status.isLoaded) {
       const pending = pendingSeekRef.current;
       if (pending) {
-        const reachedTarget = Math.abs(status.currentTime - pending.target) < 2;
-        const timedOut = Date.now() - pending.startedAt > 3000;
+        const reachedTarget = Math.abs(status.currentTime - pending.target) <= 1.5;
+        const timedOut = Date.now() - pending.startedAt > 800;
         if (reachedTarget || timedOut) {
           pendingSeekRef.current = null;
           setPosition(status.currentTime);
         }
-        // else: stale pre-seek time — keep showing the seek target
+        // else: waiting for native player seek to settle — keep showing seek target
       } else {
         setPosition(status.currentTime);
       }
@@ -337,6 +338,14 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
     },
     [db, currentBook, currentChapter, speed],
   );
+
+  // Save position on audio focus loss / headphone unplug interruption
+  useEffect(() => {
+    const unbind = registerAudioInterruptionListener(() => {
+      savePosition(player.currentTime);
+    });
+    return () => unbind();
+  }, [savePosition, player]);
 
   // Save every 5 s while playing
   useEffect(() => {

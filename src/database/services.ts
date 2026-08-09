@@ -6,21 +6,12 @@ import { AudiobookRecord, ChapterRecord, PlaybackRecord, BookmarkRecord } from '
  * If a transaction is already active on the connection, executes the callback directly.
  */
 async function runInTransaction(db: SQLiteDatabase, action: () => Promise<void>): Promise<void> {
-  try {
-    const inTx = await db.isInTransactionAsync();
-    if (inTx) {
-      await action();
-      return;
-    }
-    await db.withTransactionAsync(action);
-  } catch (err: any) {
-    const msg = err?.message || String(err);
-    if (msg.includes('cannot start a transaction') || msg.includes('cannot rollback')) {
-      await action().catch(() => {});
-    } else {
-      throw err;
-    }
+  const inTx = await db.isInTransactionAsync();
+  if (inTx) {
+    await action();
+    return;
   }
+  await db.withTransactionAsync(action);
 }
 
 export const dbService = {
@@ -63,6 +54,21 @@ export const dbService = {
 
   async getAudiobookById(db: SQLiteDatabase, id: string): Promise<AudiobookRecord | null> {
     return await db.getFirstAsync<AudiobookRecord>('SELECT * FROM audiobooks WHERE id = ?;', [id]);
+  },
+
+  async findDuplicateAudiobook(
+    db: SQLiteDatabase,
+    title: string,
+    duration: number
+  ): Promise<AudiobookRecord | null> {
+    const books = await db.getAllAsync<AudiobookRecord>(
+      'SELECT * FROM audiobooks WHERE title = ?;',
+      [title]
+    );
+    if (books.length === 0) return null;
+    if (duration <= 0) return books[0];
+    const match = books.find((b) => Math.abs(b.duration - duration) < 3);
+    return match ?? null;
   },
 
   async updateAudiobookCoverPath(db: SQLiteDatabase, bookId: string, coverPath: string): Promise<void> {
@@ -196,7 +202,23 @@ export const dbService = {
     return [];
   },
 
-  // --- Playback Operations ---
+  async setBookCompleted(db: SQLiteDatabase, bookId: string, completed: boolean): Promise<void> {
+    const existing = await this.getPlayback(db, bookId);
+    const now = new Date().toISOString();
+
+    if (existing) {
+      await db.runAsync('UPDATE playbacks SET completed = ?, lastPlayed = ? WHERE bookId = ?;', [
+        completed ? 1 : 0,
+        now,
+        bookId,
+      ]);
+    } else {
+      await db.runAsync(
+        'INSERT INTO playbacks (bookId, chapterId, position, speed, lastPlayed, completed) VALUES (?, ?, ?, ?, ?, ?);',
+        [bookId, null, 0, 1.0, now, completed ? 1 : 0]
+      );
+    }
+  },
 
   async getAllPlaybacks(db: SQLiteDatabase): Promise<PlaybackRecord[]> {
     return await db.getAllAsync<PlaybackRecord>('SELECT * FROM playbacks;');

@@ -17,6 +17,7 @@ export interface ParsedM4bData {
   genre: string | null;
   year: number | null;
   duration: number; // in seconds
+  coverBytes: Uint8Array | null;
   coverBase64: string | null;
   coverType: string | null; // e.g. 'image/jpeg' | 'image/png'
   chapters: ParsedChapter[];
@@ -708,6 +709,7 @@ async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null
       genre: null,
       year: null,
       duration: 0,
+      coverBytes: null,
       coverBase64: null,
       coverType: null,
       chapters: [],
@@ -767,7 +769,7 @@ async function parseId3v2Metadata(fileUri: string): Promise<ParsedM4bData | null
         const imgBytes = frameReader.getBytes(framePayload.length - frameReader.offset);
         if (imgBytes.length > 0) {
           const detectedMime = detectImageMimeType(imgBytes) || mimeType;
-          result.coverBase64 = bytesToBase64(imgBytes);
+          result.coverBytes = imgBytes;
           result.coverType = detectedMime;
         }
       }
@@ -856,6 +858,7 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
     genre: null,
     year: null,
     duration: 0,
+    coverBytes: null,
     coverBase64: null,
     coverType: null,
     chapters: [],
@@ -872,7 +875,8 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
       if (id3Result.album) result.album = id3Result.album;
       if (id3Result.genre) result.genre = id3Result.genre;
       if (id3Result.year) result.year = id3Result.year;
-      if (id3Result.coverBase64) {
+      if (id3Result.coverBytes || id3Result.coverBase64) {
+        result.coverBytes = id3Result.coverBytes;
         result.coverBase64 = id3Result.coverBase64;
         result.coverType = id3Result.coverType;
       }
@@ -1042,7 +1046,7 @@ export async function parseM4bMetadata(fileUri: string, fallbackFileName?: strin
                 if (key === 'covr' || typeFlag === 13 || typeFlag === 14) {
                   const imgPayload = dataBytes.slice(8);
                   const mime = detectImageMimeType(imgPayload) || 'image/jpeg';
-                  result.coverBase64 = bytesToBase64(imgPayload);
+                  result.coverBytes = imgPayload;
                   result.coverType = mime;
                 } else if (typeFlag === 1 || typeFlag === 0 || typeFlag === 21) {
                   const rData = new BinaryReader(dataBytes);

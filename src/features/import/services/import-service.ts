@@ -1,5 +1,6 @@
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
+import { File, FileMode } from 'expo-file-system';
 import { Platform } from 'react-native';
 import { type SQLiteDatabase } from 'expo-sqlite';
 import { dbService } from '@/database/services';
@@ -11,7 +12,10 @@ export const importService = {
    * Opens the system file picker to select audiobook files, parses their metadata/chapters,
    * copies them into persistent application storage, and records them in the database.
    */
-  async pickAndImportAudiobooks(db: SQLiteDatabase): Promise<AudiobookRecord[] | null> {
+  async pickAndImportAudiobooks(
+    db: SQLiteDatabase,
+    onProgress?: (stage: string, percent?: number) => void
+  ): Promise<AudiobookRecord[] | null> {
     if (Platform.OS === 'web') {
       throw new Error(
         'Import works on Android or iOS only. Start the app with Expo Go on your phone ' +
@@ -22,6 +26,8 @@ export const importService = {
     if (!FileSystem.documentDirectory) {
       throw new Error('App storage is unavailable. Restart the app and try again.');
     }
+
+    onProgress?.('Opening file picker...', 5);
 
     const pickerResult = await DocumentPicker.getDocumentAsync({
       type: [
@@ -54,7 +60,10 @@ export const importService = {
     await FileSystem.makeDirectoryAsync(audiobooksDir, { intermediates: true });
     await FileSystem.makeDirectoryAsync(coversDir, { intermediates: true });
 
-    for (const asset of pickerResult.assets) {
+    const totalAssets = pickerResult.assets.length;
+
+    for (let i = 0; i < totalAssets; i++) {
+      const asset = pickerResult.assets[i];
       let audioDestPath: string | null = null;
       let coverPath: string | null = null;
 
@@ -62,7 +71,9 @@ export const importService = {
         const bookId = 'book_' + Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
         const fileExt = asset.name.substring(asset.name.lastIndexOf('.')) || '.m4b';
 
-        // Determine asset file size (from asset.size or getInfoAsync)
+        onProgress?.(`Copying ${asset.name}...`, 20 + Math.floor((i / totalAssets) * 30));
+
+        // Determine asset file size
         let assetSize = typeof asset.size === 'number' && asset.size > 0 ? asset.size : 0;
         if (!assetSize && asset.uri) {
           try {
@@ -71,15 +82,15 @@ export const importService = {
               assetSize = info.size;
             }
           } catch (_) {
-            // Ignore if getInfoAsync fails on content URI
+            // Ignore failure
           }
         }
 
-        // Pre-check free disk space before starting expensive copyAsync
+        // Pre-check free disk space
         try {
           const freeStorageBytes = await FileSystem.getFreeDiskStorageAsync();
           if (assetSize > 0) {
-            const requiredBytes = assetSize + 10 * 1024 * 1024; // 10MB safety margin
+            const requiredBytes = assetSize + 10 * 1024 * 1024;
             if (freeStorageBytes < requiredBytes) {
               const freeMB = (freeStorageBytes / (1024 * 1024)).toFixed(1);
               const neededMB = (assetSize / (1024 * 1024)).toFixed(1);
@@ -88,7 +99,6 @@ export const importService = {
               );
             }
           } else if (freeStorageBytes < 50 * 1024 * 1024) {
-            // Safety fallback if size is completely unknown and free space is under 50MB
             const freeMB = (freeStorageBytes / (1024 * 1024)).toFixed(1);
             throw new Error(
               `Device storage is almost full (only ${freeMB} MB free). Free up space to import audiobooks.`
@@ -101,27 +111,53 @@ export const importService = {
           ) {
             throw storageErr;
           }
-          // Ignore if getFreeDiskStorageAsync is unsupported on platform
         }
 
-        // 1. Copy audiobook file to persistent audiobooks directory first
+        // 1. Copy audiobook file to persistent audiobooks directory
         audioDestPath = `${audiobooksDir}${bookId}${fileExt}`;
         await FileSystem.copyAsync({
           from: asset.uri,
           to: audioDestPath,
         });
 
-        // 2. Extract metadata & chapters from local fileUri (file://...) where random seeking is supported!
+        onProgress?.(`Extracting metadata & chapters for ${asset.name}...`, 50 + Math.floor((i / totalAssets) * 30));
+
+        // 2. Extract metadata & chapters
         const parsedData = await parseM4bMetadata(audioDestPath, asset.name);
 
-        // 3. Save cover image to persistent storage if extracted
-        if (parsedData.coverBase64) {
+        // Check for duplicate book in library
+        const existingDuplicate = await dbService.findDuplicateAudiobook(db, parsedData.title, parsedData.duration);
+        if (existingDuplicate) {
+          await FileSystem.deleteAsync(audioDestPath, { idempotent: true }).catch(() => {});
+          const dupMsg = `"${parsedData.title}" is already in your library.`;
+          console.warn(`[ImportService] ${dupMsg}`);
+          importErrors.push(dupMsg);
+          continue;
+        }
+
+        onProgress?.(`Saving cover artwork...`, 85);
+
+        // 3. Save cover image
+        if (parsedData.coverBytes || parsedData.coverBase64) {
           const coverExt = parsedData.coverType === 'image/png' ? '.png' : '.jpg';
           coverPath = `${coversDir}${bookId}${coverExt}`;
-          await FileSystem.writeAsStringAsync(coverPath, parsedData.coverBase64, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+          if (parsedData.coverBytes && parsedData.coverBytes.length > 0) {
+            const file = new File(coverPath);
+            file.create({ overwrite: true });
+            const handle = file.open(FileMode.WriteOnly);
+            try {
+              handle.writeBytes(parsedData.coverBytes);
+            } finally {
+              handle.close();
+            }
+          } else if (parsedData.coverBase64) {
+            await FileSystem.writeAsStringAsync(coverPath, parsedData.coverBase64, {
+              encoding: FileSystem.EncodingType.Base64,
+            });
+          }
         }
+
+        onProgress?.(`Recording ${parsedData.title} in database...`, 95);
 
         const nowIso = new Date().toISOString();
         const audiobook: AudiobookRecord = {
@@ -255,15 +291,26 @@ export const importService = {
 
       // Extract & Save Cover Image
       let updatedCoverPath: string | undefined;
-      if (needsCover && parsedData.coverBase64) {
+      if (needsCover && (parsedData.coverBytes || parsedData.coverBase64)) {
         const coversDir = `${FileSystem.documentDirectory}covers/`;
         await FileSystem.makeDirectoryAsync(coversDir, { intermediates: true });
         const coverExt = parsedData.coverType === 'image/png' ? '.png' : '.jpg';
         updatedCoverPath = `${coversDir}${bookId}${coverExt}`;
 
-        await FileSystem.writeAsStringAsync(updatedCoverPath, parsedData.coverBase64, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
+        if (parsedData.coverBytes && parsedData.coverBytes.length > 0) {
+          const file = new File(updatedCoverPath);
+          file.create({ overwrite: true });
+          const handle = file.open(FileMode.WriteOnly);
+          try {
+            handle.writeBytes(parsedData.coverBytes);
+          } finally {
+            handle.close();
+          }
+        } else if (parsedData.coverBase64) {
+          await FileSystem.writeAsStringAsync(updatedCoverPath, parsedData.coverBase64, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+        }
       }
 
       // Backfill any missing text metadata (never overwrite existing values,

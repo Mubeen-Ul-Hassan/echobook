@@ -46,6 +46,28 @@ export async function initAudioSession(): Promise<void> {
 }
 
 /**
+ * Subscribes to playback status updates to detect external audio focus loss
+ * (e.g. headphone disconnection, phone calls, or audio interruptions).
+ */
+export function registerAudioInterruptionListener(
+  onInterrupted: () => void
+): () => void {
+  const player = getAudioPlayer();
+  let wasPlaying = false;
+
+  const sub = player.addListener('playbackStatusUpdate', (status) => {
+    if (status.isLoaded) {
+      if (wasPlaying && !status.playing) {
+        onInterrupted();
+      }
+      wasPlaying = status.playing;
+    }
+  });
+
+  return () => sub.remove();
+}
+
+/**
  * Loads an audio file URI into the player, seeks to startPosition,
  * and optionally starts playback. Resolves when the audio is loaded and
  * the seek is complete.

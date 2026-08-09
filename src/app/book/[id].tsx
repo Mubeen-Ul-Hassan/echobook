@@ -5,24 +5,24 @@ import {
   ScrollView,
   Dimensions,
   View,
-  Alert,
 } from 'react-native';
 import { preload } from 'expo-audio';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import { useLocalSearchParams, useRouter, usePathname, useFocusEffect } from 'expo-router';
 import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { useTheme } from '@/hooks/use-theme';
 import { dbService } from '@/database/services';
 import { importService } from '@/features/import/services/import-service';
 import { AudiobookRecord, ChapterRecord, PlaybackRecord, BookmarkRecord } from '@/database/types';
 import { Spacing } from '@/constants/theme';
 import { usePlaybackStore } from '@/hooks/use-playback-store';
+import { EditMetadataModal } from '@/features/library/components/EditMetadataModal';
+import { navigateToPlayer, safeGoBack } from '@/utils/navigation';
 
 const { width } = Dimensions.get('window');
 const COVER_SIZE = width * 0.55;
@@ -32,6 +32,7 @@ export default function BookDetailScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
   const router = useRouter();
+  const pathname = usePathname();
 
   const storeBook = usePlaybackStore((s) => s.currentBook);
   const storePosition = usePlaybackStore((s) => s.position);
@@ -50,6 +51,7 @@ export default function BookDetailScreen() {
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'chapters' | 'bookmarks'>('chapters');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!id) return;
@@ -66,7 +68,6 @@ export default function BookDetailScreen() {
       setPlayback(playbackData);
       setBookmarks(bookmarksData);
 
-      // Check if metadata (cover image / chapters) can be repaired/extracted asynchronously
       if (bookData) {
         importService
           .repairOrRefreshBookMetadata(db, id)
@@ -77,11 +78,8 @@ export default function BookDetailScreen() {
           .catch(console.warn);
       }
 
-      // Preload the audio file in the background so the player starts in < 150 ms
       if (bookData?.audioPath) {
-        preload({ uri: bookData.audioPath }).catch(() => {
-          // Preload failure is non-fatal; playback will still work
-        });
+        preload({ uri: bookData.audioPath }).catch(() => {});
       }
 
       if (!bookData) {
@@ -93,18 +91,14 @@ export default function BookDetailScreen() {
     }
   }, [db, id]);
 
-  // Re-fetch database data whenever this screen comes into focus
   useFocusEffect(
     useCallback(() => {
       loadData();
     }, [loadData])
   );
 
-  // Live playback position: use active store position if currently listening to this book, else DB saved position
   const currentPosition =
     storeBook?.id === id ? storePosition : (playback?.position ?? 0);
-
-  // --- Helpers ---
 
   const formatDuration = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -129,20 +123,23 @@ export default function BookDetailScreen() {
     return Math.min(1, currentPosition / book.duration);
   };
 
-  const getChapterProgress = (chapter: ChapterRecord) => {
-    if (currentPosition >= chapter.endTime) return 1;
-    if (currentPosition <= chapter.startTime) return 0;
-    return (currentPosition - chapter.startTime) / (chapter.endTime - chapter.startTime);
+  const isCompleted = playback?.completed === 1 || getProgress() >= 0.99;
+
+  const handleToggleCompleted = async () => {
+    if (!book) return;
+    await dbService.setBookCompleted(db, book.id, !isCompleted);
+    await loadData();
   };
 
-  const isChapterActive = (chapter: ChapterRecord) => {
-    return currentPosition >= chapter.startTime && currentPosition < chapter.endTime;
+  const handleSaveMetadata = async (fields: any) => {
+    if (!book) return;
+    await dbService.updateAudiobookMetadata(db, book.id, fields);
+    await loadData();
   };
-
-  // --- Actions ---
 
   const handlePlay = (chapter?: ChapterRecord) => {
     if (!book) return;
+    usePlaybackStore.getState().setIsPlayerVisible(true);
     setCurrentBook(book);
     setStoreChapters(chapters);
 
@@ -159,16 +156,17 @@ export default function BookDetailScreen() {
       setPosition(0);
     }
 
-    router.push('/player');
+    navigateToPlayer(router, pathname);
   };
 
   const handleStartOver = () => {
     if (!book) return;
+    usePlaybackStore.getState().setIsPlayerVisible(true);
     setCurrentBook(book);
     setStoreChapters(chapters);
     setCurrentChapter(chapters[0] || null);
     setPosition(0);
-    router.push('/player');
+    navigateToPlayer(router, pathname);
   };
 
   if (!book) {
@@ -181,10 +179,8 @@ export default function BookDetailScreen() {
                 {loadError}
               </ThemedText>
               <Pressable
-                onPress={() => router.back()}
+                onPress={() => safeGoBack(router)}
                 style={[styles.errorBackBtn, { backgroundColor: theme.backgroundElement }]}
-                accessibilityRole="button"
-                accessibilityLabel="Go back to library"
               >
                 <ThemedText>Go Back</ThemedText>
               </Pressable>
@@ -201,34 +197,36 @@ export default function BookDetailScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Cover Art Hero */}
         <Animated.View entering={FadeIn.duration(400)} style={styles.heroSection}>
-          {/* Back Button */}
-          <SafeAreaView edges={['top']} style={styles.backButtonSafeArea}>
+          <SafeAreaView edges={['top']} style={styles.headerSafeArea}>
             <Pressable
-              onPress={() => router.back()}
+              onPress={() => safeGoBack(router)}
               style={({ pressed }) => [
-                styles.backButton,
+                styles.iconBtn,
                 { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement + 'CC' },
               ]}
               hitSlop={12}
             >
               <MaterialIcons name="arrow-back" size={20} color={theme.text} />
             </Pressable>
+
+            <Pressable
+              onPress={() => setShowEditModal(true)}
+              style={({ pressed }) => [
+                styles.iconBtn,
+                { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement + 'CC' },
+              ]}
+              hitSlop={12}
+            >
+              <MaterialIcons name="edit" size={18} color={theme.text} />
+            </Pressable>
           </SafeAreaView>
 
-          {/* Cover */}
           <View style={styles.coverContainer}>
             {book.coverPath ? (
-              <Image
-                source={{ uri: book.coverPath }}
-                style={styles.coverImage}
-                contentFit="cover"
-              />
+              <Image source={{ uri: book.coverPath }} style={styles.coverImage} contentFit="cover" />
             ) : (
               <View style={[styles.coverPlaceholder, { backgroundColor: theme.backgroundElement }]}>
                 <MaterialIcons name="graphic-eq" size={64} color={theme.textSecondary} />
@@ -252,35 +250,12 @@ export default function BookDetailScreen() {
             </View>
           )}
 
-          {book.album && (
+          {book.narrator && (
             <View style={styles.metaRow}>
-              <MaterialIcons name="album" size={16} color={theme.textSecondary} />
+              <MaterialIcons name="mic" size={16} color={theme.textSecondary} />
               <ThemedText themeColor="textSecondary" style={styles.metaText}>
-                {book.album}
+                Narrated by {book.narrator}
               </ThemedText>
-            </View>
-          )}
-
-          {/* Modern Premium Genre Tags */}
-          {book.genre && (
-            <View style={styles.genreContainer}>
-              {book.genre.split(',').map((g, idx) => (
-                <View
-                  key={idx}
-                  style={[
-                    styles.genrePill,
-                    {
-                      backgroundColor: theme.accent + '12',
-                      borderColor: theme.accent + '28',
-                    },
-                  ]}
-                >
-                  <MaterialIcons name="auto-awesome" size={11} color={theme.accent} />
-                  <ThemedText style={[styles.genrePillText, { color: theme.accent }]}>
-                    {g.trim().toUpperCase()}
-                  </ThemedText>
-                </View>
-              ))}
             </View>
           )}
 
@@ -295,15 +270,9 @@ export default function BookDetailScreen() {
                 {chapters.length} {chapters.length === 1 ? 'chapter' : 'chapters'}
               </ThemedText>
             </View>
-            {book.year && (
-              <View style={[styles.chip, { backgroundColor: theme.backgroundElement }]}>
-                <MaterialIcons name="calendar-today" size={14} color={theme.textSecondary} />
-                <ThemedText type="small" themeColor="textSecondary">{book.year}</ThemedText>
-              </View>
-            )}
           </View>
 
-          {/* Overall Progress */}
+          {/* Progress */}
           {currentPosition > 0 && (
             <View style={styles.overallProgress}>
               <View style={styles.progressLabelRow}>
@@ -323,7 +292,7 @@ export default function BookDetailScreen() {
           )}
         </Animated.View>
 
-        {/* Action Buttons */}
+        {/* Actions */}
         <Animated.View entering={FadeInDown.delay(200).duration(400)} style={styles.actionsSection}>
           <Pressable
             style={({ pressed }) => [
@@ -331,8 +300,6 @@ export default function BookDetailScreen() {
               { backgroundColor: pressed ? '#E06E00' : theme.accent },
             ]}
             onPress={() => handlePlay()}
-            accessibilityRole="button"
-            accessibilityLabel={currentPosition > 0 ? `Resume ${book.title}` : `Play ${book.title}`}
           >
             <MaterialIcons name="play-arrow" size={22} color="#000" />
             <ThemedText style={styles.primaryButtonText}>
@@ -340,31 +307,30 @@ export default function BookDetailScreen() {
             </ThemedText>
           </Pressable>
 
-          {currentPosition > 0 && (
-            <Pressable
-              style={({ pressed }) => [
-                styles.secondaryButton,
-                { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
-              ]}
-              onPress={handleStartOver}
-              accessibilityRole="button"
-              accessibilityLabel={`Start ${book.title} from the beginning`}
-            >
-              <MaterialIcons name="replay" size={20} color={theme.text} />
-              <ThemedText style={styles.secondaryButtonText}>Start Over</ThemedText>
-            </Pressable>
-          )}
+          <Pressable
+            style={({ pressed }) => [
+              styles.secondaryButton,
+              { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement },
+            ]}
+            onPress={handleToggleCompleted}
+          >
+            <MaterialIcons
+              name={isCompleted ? 'check-circle' : 'check-circle-outline'}
+              size={20}
+              color={isCompleted ? '#30D158' : theme.text}
+            />
+            <ThemedText style={[styles.secondaryButtonText, isCompleted && { color: '#30D158' }]}>
+              {isCompleted ? 'Completed' : 'Mark Done'}
+            </ThemedText>
+          </Pressable>
         </Animated.View>
 
-        {/* Tabs: Chapters / Bookmarks */}
+        {/* Tabs */}
         <Animated.View entering={FadeInDown.delay(300).duration(400)}>
           <View style={styles.tabBar}>
             <Pressable
               style={[styles.tab, activeTab === 'chapters' && { borderBottomColor: theme.accent }]}
               onPress={() => setActiveTab('chapters')}
-              accessibilityRole="tab"
-              accessibilityLabel={`Chapters, ${chapters.length} total`}
-              accessibilityState={{ selected: activeTab === 'chapters' }}
             >
               <ThemedText
                 style={[
@@ -378,9 +344,6 @@ export default function BookDetailScreen() {
             <Pressable
               style={[styles.tab, activeTab === 'bookmarks' && { borderBottomColor: theme.accent }]}
               onPress={() => setActiveTab('bookmarks')}
-              accessibilityRole="tab"
-              accessibilityLabel={`Bookmarks, ${bookmarks.length} saved`}
-              accessibilityState={{ selected: activeTab === 'bookmarks' }}
             >
               <ThemedText
                 style={[
@@ -393,126 +356,39 @@ export default function BookDetailScreen() {
             </Pressable>
           </View>
 
-          {/* Chapters List */}
           {activeTab === 'chapters' && (
             <View style={styles.listContainer}>
-              {chapters.map((chapter, index) => {
-                const chProgress = getChapterProgress(chapter);
-                const isActive = isChapterActive(chapter);
-                const isComplete = chProgress >= 1;
-
-                return (
-                  <Pressable
-                    key={chapter.id}
-                    style={({ pressed }) => [
-                      styles.chapterRow,
-                      {
-                        backgroundColor: isActive
-                          ? theme.backgroundElement
-                          : pressed
-                          ? theme.backgroundElement + '88'
-                          : 'transparent',
-                      },
-                    ]}
-                    onPress={() => handlePlay(chapter)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${chapter.title}, ${formatDuration(chapter.duration)}${isActive ? ', currently playing' : isComplete ? ', completed' : ''}`}
-                    accessibilityState={{ selected: isActive }}
-                  >
-                    {/* Chapter Number / Status */}
-                    <View style={styles.chapterIndex}>
-                      {isComplete ? (
-                        <MaterialIcons name="check-circle" size={20} color={theme.accent} />
-                      ) : isActive ? (
-                        <MaterialIcons name="play-arrow" size={18} color={theme.accent} />
-                      ) : (
-                        <ThemedText themeColor="textSecondary" style={styles.chapterNumber}>
-                          {index + 1}
-                        </ThemedText>
-                      )}
-                    </View>
-
-                    {/* Chapter Info */}
-                    <View style={styles.chapterInfo}>
-                      <ThemedText
-                        numberOfLines={1}
-                        style={[
-                          styles.chapterTitle,
-                          isActive && { color: theme.accent },
-                        ]}
-                      >
-                        {chapter.title}
-                      </ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary">
-                        {formatTimestamp(chapter.startTime)} · {formatDuration(chapter.duration)}
-                      </ThemedText>
-
-                      {/* Per-chapter progress bar */}
-                      {chProgress > 0 && chProgress < 1 && (
-                        <View style={[styles.chapterProgressBg, { backgroundColor: theme.backgroundSelected }]}>
-                          <View
-                            style={[
-                              styles.chapterProgressFill,
-                              { backgroundColor: theme.accent, width: `${chProgress * 100}%` },
-                            ]}
-                          />
-                        </View>
-                      )}
-                    </View>
-
-                    <MaterialIcons name="chevron-right" size={18} color={theme.textSecondary} />
-                  </Pressable>
-                );
-              })}
-            </View>
-          )}
-
-          {/* Bookmarks List */}
-          {activeTab === 'bookmarks' && (
-            <View style={styles.listContainer}>
-              {bookmarks.length === 0 ? (
-                <View style={styles.emptyList}>
-                  <MaterialIcons name="bookmark" size={36} color={theme.backgroundSelected} />
-                  <ThemedText themeColor="textSecondary" style={styles.emptyText}>
-                    No bookmarks yet.{'\n'}Add them while listening.
+              {chapters.map((chapter, index) => (
+                <Pressable
+                  key={chapter.id}
+                  style={styles.chapterRow}
+                  onPress={() => handlePlay(chapter)}
+                >
+                  <ThemedText themeColor="textSecondary" style={styles.chapterNumber}>
+                    {index + 1}
                   </ThemedText>
-                </View>
-              ) : (
-                bookmarks.map((bm) => {
-                  const ch = chapters.find((c) => c.id === bm.chapterId);
-                  return (
-                    <Pressable
-                      key={bm.id}
-                      style={({ pressed }) => [
-                        styles.bookmarkRow,
-                        { backgroundColor: pressed ? theme.backgroundElement + '88' : 'transparent' },
-                      ]}
-                      onPress={() => {
-                        if (!book) return;
-                        setCurrentBook(book);
-                        setStoreChapters(chapters);
-                        if (ch) setCurrentChapter(ch);
-                        setPosition(bm.position);
-                        router.push('/player');
-                      }}
-                    >
-                      <MaterialIcons name="bookmark" size={18} color={theme.accent} />
-                      <View style={styles.bookmarkInfo}>
-                        <ThemedText numberOfLines={1} style={styles.bookmarkNote}>
-                          {bm.note || `Bookmark at ${formatTimestamp(bm.position)}`}
-                        </ThemedText>
-                        <ThemedText type="small" themeColor="textSecondary">
-                          {ch ? ch.title : 'Unknown'} · {formatTimestamp(bm.position)}
-                        </ThemedText>
-                      </View>
-                    </Pressable>
-                  );
-                })
-              )}
+                  <View style={styles.chapterInfo}>
+                    <ThemedText style={styles.chapterTitle} numberOfLines={1}>
+                      {chapter.title}
+                    </ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {formatTimestamp(chapter.startTime)} · {formatDuration(chapter.duration)}
+                    </ThemedText>
+                  </View>
+                </Pressable>
+              ))}
             </View>
           )}
         </Animated.View>
       </ScrollView>
+
+      {/* Edit Metadata Modal */}
+      <EditMetadataModal
+        visible={showEditModal}
+        book={book}
+        onSave={handleSaveMetadata}
+        onClose={() => setShowEditModal(false)}
+      />
     </View>
   );
 }
@@ -528,57 +404,49 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: Spacing.four,
   },
   errorBackBtn: {
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
-
-  // --- Hero ---
   heroSection: {
     alignItems: 'center',
     paddingBottom: Spacing.four,
   },
-  backButtonSafeArea: {
+  headerSafeArea: {
     position: 'absolute',
     top: 0,
     left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
     zIndex: 10,
   },
-  backButton: {
+  iconBtn: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: Spacing.three,
-    marginTop: Spacing.two,
+    marginTop: 8,
   },
   coverContainer: {
     marginTop: Spacing.six,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 12,
   },
   coverImage: {
     width: COVER_SIZE,
     height: COVER_SIZE,
-    borderRadius: Spacing.four,
+    borderRadius: 20,
   },
   coverPlaceholder: {
     width: COVER_SIZE,
     height: COVER_SIZE,
-    borderRadius: Spacing.four,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // --- Metadata ---
   metaSection: {
     paddingHorizontal: Spacing.four,
     alignItems: 'center',
@@ -588,8 +456,6 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     textAlign: 'center',
-    lineHeight: 28,
-    letterSpacing: -0.3,
   },
   metaRow: {
     flexDirection: 'row',
@@ -598,57 +464,29 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   metaText: {
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  genreContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: Spacing.two + 2,
-  },
-  genrePill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 100,
-    borderWidth: 1,
-  },
-  genrePillText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+    fontSize: 14,
   },
   metaChips: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center',
-    gap: Spacing.two,
-    marginTop: Spacing.three,
+    gap: 8,
+    marginTop: 12,
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: Spacing.three,
+    gap: 4,
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 100,
+    borderRadius: 14,
   },
   overallProgress: {
     width: '100%',
-    marginTop: Spacing.four,
-    paddingTop: Spacing.three,
-    borderTopWidth: 1,
-    borderTopColor: 'rgba(128,128,128,0.12)',
+    marginTop: 16,
   },
   progressLabelRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   progressBarBg: {
     height: 6,
@@ -657,25 +495,21 @@ const styles = StyleSheet.create({
   },
   progressBarFill: {
     height: '100%',
-    borderRadius: 3,
   },
-
-  // --- Actions ---
   actionsSection: {
     flexDirection: 'row',
     paddingHorizontal: Spacing.four,
-    gap: Spacing.three,
-    marginTop: Spacing.four,
-    marginBottom: Spacing.four,
+    gap: 12,
+    marginVertical: 20,
   },
   primaryButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.two,
+    gap: 8,
     paddingVertical: 14,
-    borderRadius: Spacing.three,
+    borderRadius: 16,
   },
   primaryButtonText: {
     color: '#000',
@@ -686,17 +520,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.two,
+    gap: 6,
     paddingVertical: 14,
-    paddingHorizontal: Spacing.four,
-    borderRadius: Spacing.three,
+    paddingHorizontal: 16,
+    borderRadius: 16,
   },
   secondaryButtonText: {
     fontWeight: '600',
-    fontSize: 15,
+    fontSize: 14,
   },
-
-  // --- Tabs ---
   tabBar: {
     flexDirection: 'row',
     borderBottomWidth: 1,
@@ -706,7 +538,7 @@ const styles = StyleSheet.create({
   tab: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: Spacing.three,
+    paddingVertical: 12,
     borderBottomWidth: 2,
     borderBottomColor: 'transparent',
   },
@@ -714,27 +546,20 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
-
-  // --- Chapter List ---
   listContainer: {
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.two,
+    paddingHorizontal: Spacing.four,
+    paddingTop: 12,
   },
   chapterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.two,
-    borderRadius: Spacing.two,
-    gap: Spacing.three,
-  },
-  chapterIndex: {
-    width: 28,
-    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 12,
   },
   chapterNumber: {
     fontSize: 14,
     fontWeight: '600',
+    width: 24,
   },
   chapterInfo: {
     flex: 1,
@@ -742,42 +567,5 @@ const styles = StyleSheet.create({
   chapterTitle: {
     fontSize: 15,
     fontWeight: '600',
-    marginBottom: 2,
-  },
-  chapterProgressBg: {
-    height: 2,
-    borderRadius: 1,
-    marginTop: 6,
-    overflow: 'hidden',
-  },
-  chapterProgressFill: {
-    height: '100%',
-  },
-
-  // --- Bookmarks ---
-  bookmarkRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: Spacing.three,
-    paddingHorizontal: Spacing.two,
-    borderRadius: Spacing.two,
-    gap: Spacing.three,
-  },
-  bookmarkInfo: {
-    flex: 1,
-  },
-  bookmarkNote: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  emptyList: {
-    alignItems: 'center',
-    paddingVertical: Spacing.six,
-    gap: Spacing.two,
-  },
-  emptyText: {
-    textAlign: 'center',
-    lineHeight: 20,
   },
 });

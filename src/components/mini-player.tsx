@@ -12,7 +12,7 @@ import {
   StyleSheet,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { Image } from 'expo-image';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,11 +30,13 @@ import { usePlayerContext } from '@/features/player/components/playback-provider
 import { useTheme } from '@/hooks/use-theme';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { navigateToPlayer } from '@/utils/navigation';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export function MiniPlayer() {
   const router = useRouter();
+  const pathname = usePathname();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const { play, pause, skipForward, stopPlayback } = usePlayerContext();
@@ -72,7 +74,9 @@ export function MiniPlayer() {
     width: `${Math.min(100, Math.max(0, progressSV.value * 100))}%`,
   }));
 
-  if (!currentBook || isPlayerVisible) return null;
+  const isPlayerScreen = pathname === '/player';
+
+  if (!currentBook || isPlayerVisible || isPlayerScreen) return null;
 
   return (
     <Animated.View
@@ -94,7 +98,7 @@ export function MiniPlayer() {
 
       {/* Main body card */}
       <Pressable
-        onPress={() => router.push('/player')}
+        onPress={() => navigateToPlayer(router, pathname)}
         style={styles.body}
         accessibilityRole="button"
         accessibilityLabel={`Now playing: ${currentChapter?.title ?? currentBook.title}. Tap to open full player.`}
