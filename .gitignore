@@ -46,3 +46,4 @@ example
 .context/
 .vscode/
 .agents
+echobook.db
