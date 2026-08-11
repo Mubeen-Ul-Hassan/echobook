@@ -11,14 +11,29 @@ import { PlaybackProvider } from '@/features/player/components/playback-provider
 import { MiniPlayer } from '@/components/mini-player';
 import { ErrorBoundary } from '@/components/error-boundary';
 
+import { useFonts } from 'expo-font';
+
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const [fontsLoaded, fontError] = useFonts({
+    Montserrat_400Regular: require('@/assets/fonts/Montserrat-Regular.ttf'),
+    Montserrat_500Medium: require('@/assets/fonts/Montserrat-Medium.ttf'),
+    Montserrat_600SemiBold: require('@/assets/fonts/Montserrat-SemiBold.ttf'),
+    Montserrat_700Bold: require('@/assets/fonts/Montserrat-Bold.ttf'),
+    Montserrat_800ExtraBold: require('@/assets/fonts/Montserrat-ExtraBold.ttf'),
+  });
 
   useEffect(() => {
-    SplashScreen.hideAsync().catch(() => {});
-  }, []);
+    if (fontsLoaded || fontError) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [fontsLoaded, fontError]);
+
+  if (!fontsLoaded && !fontError) {
+    return null;
+  }
 
   return (
     <ErrorBoundary>

@@ -2,100 +2,95 @@
  * MiniPlayer
  *
  * A sleek floating playback bar displayed on non-player screens.
- * Positioned dynamically above the bottom safe area (navigation bar)
- * to ensure clear visibility on Android 15 (Samsung S22 Ultra) and iOS devices.
+ * Positioned dynamically above the bottom navigation bar with a thin line distinction.
  */
-import React from 'react';
+import { MaterialIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { usePathname, useRouter } from 'expo-router';
 import {
-  Dimensions,
   Pressable,
   StyleSheet,
   View,
 } from 'react-native';
-import { useRouter, usePathname } from 'expo-router';
-import { Image } from 'expo-image';
-import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-  FadeInDown,
-  FadeOutDown,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-  Easing,
-} from 'react-native-reanimated';
 
-import { usePlaybackStore } from '@/hooks/use-playback-store';
-import { usePlayerContext } from '@/features/player/components/playback-provider';
-import { useTheme } from '@/hooks/use-theme';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { usePlayerContext } from '@/features/player/components/playback-provider';
+import { usePlaybackStore } from '@/hooks/use-playback-store';
+import { useTheme } from '@/hooks/use-theme';
 import { navigateToPlayer } from '@/utils/navigation';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+function formatRemainingTime(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+
+  if (hrs > 0) {
+    return `${hrs}h ${mins}min left`;
+  }
+  if (mins > 0) {
+    return `${mins}min ${secs}s left`;
+  }
+  return `${secs}s left`;
+}
 
 export function MiniPlayer() {
   const router = useRouter();
   const pathname = usePathname();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const { play, pause, skipForward, stopPlayback } = usePlayerContext();
+  const { play, pause, skipBackward } = usePlayerContext();
 
   const currentBook = usePlaybackStore((s) => s.currentBook);
   const currentChapter = usePlaybackStore((s) => s.currentChapter);
-  const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const position = usePlaybackStore((s) => s.position);
+  const duration = usePlaybackStore((s) => s.duration);
+  const isPlaying = usePlaybackStore((s) => s.isPlaying);
   const isPlayerVisible = usePlaybackStore((s) => s.isPlayerVisible);
 
-  // Calculate safe bottom padding above gesture bar
-  const bottomPosition = Math.max(insets.bottom, 12) + Spacing.two;
+  const chapterStartTime =
+    currentChapter && currentChapter.endTime > currentChapter.startTime ? currentChapter.startTime : 0;
+  const chapterEndTime =
+    currentChapter && currentChapter.endTime > currentChapter.startTime ? currentChapter.endTime : duration;
+  const activeDuration = Math.max(1, chapterEndTime - chapterStartTime);
 
-  // Smooth progress bar calculation based on current chapter duration
-  const getProgressRatio = () => {
-    if (currentChapter && currentChapter.endTime > currentChapter.startTime) {
-      const chapterDuration = currentChapter.endTime - currentChapter.startTime;
-      const chapterPosition = position - currentChapter.startTime;
-      return Math.min(1, Math.max(0, chapterPosition / chapterDuration));
-    }
-    if (currentBook && currentBook.duration > 0) {
-      return Math.min(1, Math.max(0, position / currentBook.duration));
-    }
-    return 0;
-  };
+  const activePosition = Math.min(activeDuration, Math.max(0, position - chapterStartTime));
+  const remainingSeconds = Math.max(0, activeDuration - activePosition);
 
-  const progressRatio = getProgressRatio();
+  // Check if current screen has bottom navigation tab bar
+  const isTabScreen =
+    pathname === '/' ||
+    pathname === '/index' ||
+    pathname === '/library' ||
+    pathname === '/profile' ||
+    pathname.startsWith('/(tabs)');
 
-  const progressSV = useSharedValue(progressRatio);
-  React.useEffect(() => {
-    progressSV.value = withTiming(progressRatio, { duration: 400, easing: Easing.linear });
-  }, [progressRatio, progressSV]);
+  // Height of bottom tab bar content (64) + safe area inset
+  const tabBarHeight = 64 + Math.max(insets.bottom, 8);
 
-  const progressStyle = useAnimatedStyle(() => ({
-    width: `${Math.min(100, Math.max(0, progressSV.value * 100))}%`,
-  }));
+  // Position mini-player directly attached to top of bottom navigation bar on tab screens, or at bottom inset on non-tab screens
+  const bottomPosition = isTabScreen
+    ? tabBarHeight
+    : Math.max(insets.bottom, 0);
 
   const isPlayerScreen = pathname === '/player';
 
   if (!currentBook || isPlayerVisible || isPlayerScreen) return null;
 
   return (
-    <Animated.View
-      entering={FadeInDown.springify().damping(20).stiffness(160)}
-      exiting={FadeOutDown.duration(180)}
+    <View
       style={[
         styles.container,
         {
           backgroundColor: theme.backgroundElement,
-          borderColor: theme.border,
+          borderTopColor: theme.border,
+          borderBottomColor: theme.border,
           bottom: bottomPosition,
         },
       ]}
     >
-      {/* Top progress indicator strip */}
-      <View style={[styles.progressTrack, { backgroundColor: theme.backgroundSelected }]}>
-        <Animated.View style={[styles.progressFill, { backgroundColor: theme.accent }, progressStyle]} />
-      </View>
-
       {/* Main body card */}
       <Pressable
         onPress={() => navigateToPlayer(router, pathname)}
@@ -116,28 +111,30 @@ export function MiniPlayer() {
           </View>
         )}
 
-        {/* Book & Chapter Details */}
+        {/* Chapter Details & Remaining Time */}
         <View style={styles.info}>
           <ThemedText numberOfLines={1} style={styles.chapterText}>
             {currentChapter?.title ?? currentBook.title}
           </ThemedText>
           <ThemedText numberOfLines={1} type="small" themeColor="textSecondary" style={styles.bookText}>
-            {currentBook.title}
-            {currentBook.author ? ` · ${currentBook.author}` : ''}
+            {formatRemainingTime(remainingSeconds)}
           </ThemedText>
         </View>
 
-        {/* Playback Controls */}
+        {/* Playback Controls: Fast Backward & Play/Pause (Identical proportions & size) */}
         <View style={styles.controlsRow}>
-          {/* Skip Forward 30s */}
+          {/* Fast Backward (30s) */}
           <Pressable
-            onPress={() => skipForward(30)}
+            onPress={() => skipBackward(30)}
             hitSlop={8}
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.6 : 1 }]}
+            style={({ pressed }) => [
+              styles.controlBtn,
+              { backgroundColor: theme.backgroundSelected, opacity: pressed ? 0.8 : 1 },
+            ]}
             accessibilityRole="button"
-            accessibilityLabel="Skip forward 30 seconds"
+            accessibilityLabel="Fast backward 30 seconds"
           >
-            <MaterialIcons name="forward-30" size={24} color={theme.text} />
+            <MaterialIcons name="replay-30" size={35} color={theme.text} />
           </Pressable>
 
           {/* Play / Pause Toggle */}
@@ -145,73 +142,53 @@ export function MiniPlayer() {
             onPress={isPlaying ? pause : play}
             hitSlop={8}
             style={({ pressed }) => [
-              styles.playBtn,
+              styles.controlBtn,
               { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
             ]}
             accessibilityRole="button"
             accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? (
-              <MaterialIcons name="pause" size={22} color="#000000" />
+              <MaterialIcons name="pause" size={35} color="#000000" />
             ) : (
-              <MaterialIcons name="play-arrow" size={22} color="#000000" />
+              <MaterialIcons name="play-arrow" size={35} color="#000000" />
             )}
-          </Pressable>
-
-          {/* Dismiss */}
-          <Pressable
-            onPress={stopPlayback}
-            hitSlop={8}
-            style={({ pressed }) => [styles.iconBtn, { opacity: pressed ? 0.5 : 1 }]}
-            accessibilityRole="button"
-            accessibilityLabel="Close mini player"
-          >
-            <MaterialIcons name="close" size={20} color={theme.textSecondary} />
           </Pressable>
         </View>
       </Pressable>
-    </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    left: Spacing.three,
-    right: Spacing.three,
-    borderRadius: 18,
-    borderWidth: 1,
+    left: 0,
+    right: 0,
+    borderRadius: 0,
+    borderTopWidth: 1,
+    borderBottomWidth: 1,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 18,
-    elevation: 16,
     zIndex: 999,
-  },
-  progressTrack: {
-    height: 3,
-    width: '100%',
-  },
-  progressFill: {
-    height: '100%',
   },
   body: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.two + 4,
-    paddingVertical: Spacing.two + 2,
+    height: 64,
+    paddingHorizontal: Spacing.three,
     gap: Spacing.two + 2,
   },
   cover: {
     width: 44,
     height: 44,
-    borderRadius: 10,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
+    shadowOpacity: 0.2,
     shadowRadius: 4,
   },
   info: {
@@ -232,22 +209,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
-  iconBtn: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  playBtn: {
+  controlBtn: {
     width: 38,
     height: 38,
     borderRadius: 19,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#F7991C',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 4,
   },
 });

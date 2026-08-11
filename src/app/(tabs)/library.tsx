@@ -1,38 +1,31 @@
-import { useFocusEffect, usePathname, useRouter } from 'expo-router';
-import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
+  StyleSheet,
+  ScrollView,
   Alert,
   Platform,
-  ScrollView,
-  StyleSheet,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSQLiteContext } from 'expo-sqlite';
+import { useRouter, usePathname, useFocusEffect } from 'expo-router';
 
 import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
-import { dbService } from '@/database/services';
-import { AudiobookRecord, PlaybackRecord } from '@/database/types';
-import { importService } from '@/features/import/services/import-service';
-import { usePlayerContext } from '@/features/player/components/playback-provider';
-import { usePlaybackStore } from '@/hooks/use-playback-store';
 import { useTheme } from '@/hooks/use-theme';
-import { navigateToPlayer } from '@/utils/navigation';
+import { dbService } from '@/database/services';
+import { importService } from '@/features/import/services/import-service';
+import { AudiobookRecord, PlaybackRecord } from '@/database/types';
+import { Spacing } from '@/constants/theme';
 
-import { ImportProgressModal } from '@/features/import/components/ImportProgressModal';
-import { BookGridCard } from '@/features/library/components/BookGridCard';
-import { ContinueListeningHero } from '@/features/library/components/ContinueListeningHero';
-import { CategoryFilter, LibraryFilterBar, SortOption } from '@/features/library/components/LibraryFilterBar';
 import { LibraryHeader } from '@/features/library/components/LibraryHeader';
-import { LibraryStatsWidget } from '@/features/library/components/LibraryStatsWidget';
+import { LibraryFilterBar, CategoryFilter, SortOption } from '@/features/library/components/LibraryFilterBar';
+import { BookGridCard } from '@/features/library/components/BookGridCard';
+import { ImportProgressModal } from '@/features/import/components/ImportProgressModal';
 
-export default function HomeScreen() {
+export default function LibraryScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
   const router = useRouter();
-  const pathname = usePathname();
-  const { startBook } = usePlayerContext();
 
   const [books, setBooks] = useState<AudiobookRecord[]>([]);
   const [playbacksMap, setPlaybacksMap] = useState<Record<string, PlaybackRecord>>({});
@@ -43,16 +36,6 @@ export default function HomeScreen() {
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
   const [sortBy, setSortBy] = useState<SortOption>('recent');
 
-  const [recentPlayback, setRecentPlayback] = useState<{
-    bookId: string;
-    title: string;
-    author: string | null;
-    coverPath: string | null;
-    duration: number;
-    position: number;
-  } | null>(null);
-
-  // Load books & playbacks from database
   const loadBooks = useCallback(async () => {
     try {
       const allBooks = await dbService.getAudiobooks(db);
@@ -64,25 +47,8 @@ export default function HomeScreen() {
         pbMap[pb.bookId] = pb;
       }
       setPlaybacksMap(pbMap);
-
-      const recents = await dbService.getRecentPlaybacks(db, 1);
-      if (recents.length > 0) {
-        const fullBook = await dbService.getAudiobookById(db, recents[0].bookId);
-        if (fullBook) {
-          setRecentPlayback({
-            bookId: fullBook.id,
-            title: fullBook.title,
-            author: fullBook.author,
-            coverPath: fullBook.coverPath,
-            duration: fullBook.duration,
-            position: recents[0].position,
-          });
-        }
-      } else {
-        setRecentPlayback(null);
-      }
     } catch (error) {
-      console.error('[HomeScreen] Failed to load books:', error);
+      console.error('[LibraryScreen] Failed to load books:', error);
     }
   }, [db]);
 
@@ -92,7 +58,6 @@ export default function HomeScreen() {
     }, [loadBooks])
   );
 
-  // Handle Import with progress callback
   const handleImport = async () => {
     if (Platform.OS === 'web') {
       const message =
@@ -123,7 +88,7 @@ export default function HomeScreen() {
         await loadBooks();
       }
     } catch (err: any) {
-      console.error('[HomeScreen] Import failed:', err);
+      console.error('[LibraryScreen] Import failed:', err);
       Alert.alert('Import Failed', err?.message || 'An unexpected error occurred during import.');
     } finally {
       setIsImporting(false);
@@ -132,7 +97,6 @@ export default function HomeScreen() {
     }
   };
 
-  // Filter & Sort books
   const filteredBooks = books.filter((b) => {
     const query = searchQuery.toLowerCase().trim();
     if (query) {
@@ -193,75 +157,6 @@ export default function HomeScreen() {
     router.push(`/book/${bookId}`);
   };
 
-  const handlePlayRecent = async () => {
-    if (!recentPlayback) return;
-    usePlaybackStore.getState().setIsPlayerVisible(true);
-    const book = await dbService.getAudiobookById(db, recentPlayback.bookId);
-    if (!book) return;
-    const chapters = await dbService.getChaptersByBookId(db, book.id);
-    await startBook(book, chapters, recentPlayback.position, true);
-    navigateToPlayer(router, pathname);
-  };
-
-  const completedCount = books.filter((b) => {
-    const pb = playbacksMap[b.id];
-    return pb?.completed === 1 || (pb && b.duration > 0 && pb.position / b.duration >= 0.99);
-  }).length;
-
-  const inProgressCount = books.filter((b) => {
-    const pb = playbacksMap[b.id];
-    const p = pb && b.duration > 0 ? pb.position / b.duration : 0;
-    return p > 0 && pb?.completed !== 1 && p < 0.99;
-  }).length;
-
-  const totalListenedSeconds = books.reduce((sum, book) => {
-    const pb = playbacksMap[book.id];
-    if (!pb) return sum;
-    if (pb.completed === 1 || (book.duration > 0 && pb.position / book.duration >= 0.99)) {
-      return sum + Math.max(pb.position || 0, book.duration || 0);
-    }
-    return sum + (pb.position || 0);
-  }, 0);
-
-  const streakDays = (() => {
-    const playbacks = Object.values(playbacksMap);
-    if (!playbacks.length) return 0;
-    const datesSet = new Set<string>();
-    for (const pb of playbacks) {
-      if (pb.lastPlayed) {
-        const dStr = new Date(pb.lastPlayed).toISOString().split('T')[0];
-        if (dStr) datesSet.add(dStr);
-      }
-    }
-    if (datesSet.size === 0) return 0;
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-    let streak = 0;
-    let checkDate: Date;
-    if (datesSet.has(todayStr)) {
-      checkDate = today;
-    } else if (datesSet.has(yesterdayStr)) {
-      checkDate = yesterday;
-    } else {
-      return 0;
-    }
-
-    while (true) {
-      const dStr = checkDate.toISOString().split('T')[0];
-      if (datesSet.has(dStr)) {
-        streak++;
-        checkDate.setDate(checkDate.getDate() - 1);
-      } else {
-        break;
-      }
-    }
-    return streak;
-  })();
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
       <LibraryHeader
@@ -271,21 +166,7 @@ export default function HomeScreen() {
       />
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Continue Listening Hero */}
-        <ContinueListeningHero
-          recentPlayback={recentPlayback}
-          onPlayRecent={handlePlayRecent}
-        />
-
-        {/* Library Stats Widget ("Your Insights") */}
-        <LibraryStatsWidget
-          totalBooks={books.length}
-          completedCount={completedCount}
-          totalListenedSeconds={totalListenedSeconds}
-          streakDays={streakDays}
-        />
-
-        {/* Library Section Header, Search Bar & Short Filter Buttons */}
+        {/* Filter Bar & Search */}
         <LibraryFilterBar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -302,8 +183,8 @@ export default function HomeScreen() {
                 {searchQuery
                   ? `No audiobooks match "${searchQuery}".`
                   : categoryFilter !== 'all'
-                    ? `No audiobooks in "${categoryFilter.replace('_', ' ')}".`
-                    : 'Your library is empty. Import your first M4B file to get started.'}
+                  ? `No audiobooks in "${categoryFilter.replace('_', ' ')}".`
+                  : 'Your library is empty. Import your first M4B file to get started.'}
               </ThemedText>
             </View>
           ) : (
@@ -321,7 +202,6 @@ export default function HomeScreen() {
         </View>
       </ScrollView>
 
-      {/* Import Progress Modal */}
       <ImportProgressModal
         visible={isImporting}
         stage={importStage}
@@ -340,6 +220,7 @@ const styles = StyleSheet.create({
   },
   booksSection: {
     paddingHorizontal: Spacing.four,
+    marginTop: Spacing.two,
   },
   gridContainer: {
     flexDirection: 'row',

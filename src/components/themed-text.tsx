@@ -48,58 +48,69 @@ export function ThemedText({ style, type = 'default', themeColor, ...rest }: The
 
 const styles = StyleSheet.create({
   small: {
+    fontFamily: Fonts.medium,
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '500',
   },
   smallBold: {
+    fontFamily: Fonts.bold,
     fontSize: 13,
     lineHeight: 18,
     fontWeight: '700',
   },
   default: {
+    fontFamily: Fonts.medium,
     fontSize: 15,
     lineHeight: 22,
     fontWeight: '500',
   },
   title: {
+    fontFamily: Fonts.extraBold,
     fontSize: 28,
     fontWeight: '800',
     lineHeight: 34,
     letterSpacing: -0.5,
   },
   subtitle: {
+    fontFamily: Fonts.bold,
     fontSize: 20,
     lineHeight: 28,
     fontWeight: '700',
     letterSpacing: -0.2,
   },
   audibleHeader: {
+    fontFamily: Fonts.extraBold,
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: 0.3,
   },
   sectionTitle: {
+    fontFamily: Fonts.bold,
     fontSize: 17,
     fontWeight: '700',
     letterSpacing: -0.1,
   },
   captionBold: {
+    fontFamily: Fonts.bold,
     fontSize: 11,
     fontWeight: '700',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
   },
   chapterTitle: {
+    fontFamily: Fonts.semiBold,
     fontSize: 16,
     fontWeight: '600',
     lineHeight: 22,
   },
   link: {
+    fontFamily: Fonts.sans,
     lineHeight: 24,
     fontSize: 14,
   },
   linkPrimary: {
+    fontFamily: Fonts.semiBold,
     lineHeight: 24,
     fontSize: 14,
     color: '#F7991C',

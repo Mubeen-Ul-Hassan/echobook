@@ -3,7 +3,10 @@ const { getDefaultConfig } = require('expo/metro-config');
 /** @type {import('expo/metro-config').MetroConfig} */
 const config = getDefaultConfig(__dirname);
 
-// Add support for wasm files to resolver asset and source extensions
+// Add support for ttf and wasm files to resolver asset extensions
+if (!config.resolver.assetExts.includes('ttf')) {
+  config.resolver.assetExts.push('ttf');
+}
 config.resolver.assetExts.push('wasm');
 config.resolver.sourceExts.push('wasm');
 

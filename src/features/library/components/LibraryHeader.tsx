@@ -1,29 +1,30 @@
-import React from 'react';
-import { StyleSheet, View, Pressable, TextInput, ActivityIndicator } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
-import { useTheme } from '@/hooks/use-theme';
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { MaterialIcons } from '@expo/vector-icons';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 interface LibraryHeaderProps {
-  searchQuery: string;
-  onSearchChange: (text: string) => void;
+  searchQuery?: string;
+  onSearchChange?: (text: string) => void;
   isImporting: boolean;
   onImport: () => void;
+  showSearchBar?: boolean;
 }
 
 export function LibraryHeader({
-  searchQuery,
+  searchQuery = '',
   onSearchChange,
   isImporting,
   onImport,
+  showSearchBar = false,
 }: LibraryHeaderProps) {
   const theme = useTheme();
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, !showSearchBar && styles.containerCompact]}>
       {/* Top Title Row */}
-      <View style={styles.titleRow}>
+      <View style={[styles.titleRow, !showSearchBar && styles.titleRowCompact]}>
         <View>
           <ThemedText style={styles.brandTitle}>EchoBook</ThemedText>
           <ThemedText themeColor="textSecondary" style={styles.brandSubtitle}>
@@ -52,22 +53,24 @@ export function LibraryHeader({
         </Pressable>
       </View>
 
-      {/* Search Input Bar */}
-      <View style={[styles.searchBar, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-        <MaterialIcons name="search" size={20} color={theme.textSecondary} />
-        <TextInput
-          value={searchQuery}
-          onChangeText={onSearchChange}
-          placeholder="Search by title, author, or genre..."
-          placeholderTextColor={theme.textSecondary}
-          style={[styles.searchInput, { color: theme.text }]}
-        />
-        {searchQuery ? (
-          <Pressable onPress={() => onSearchChange('')} hitSlop={8}>
-            <MaterialIcons name="close" size={18} color={theme.textSecondary} />
-          </Pressable>
-        ) : null}
-      </View>
+      {/* Search Input Bar (only shown if showSearchBar is true) */}
+      {showSearchBar && onSearchChange ? (
+        <View style={[styles.searchBar, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+          <MaterialIcons name="search" size={20} color={theme.textSecondary} />
+          <TextInput
+            value={searchQuery}
+            onChangeText={onSearchChange}
+            placeholder="Search by title, author, or genre..."
+            placeholderTextColor={theme.textSecondary}
+            style={[styles.searchInput, { color: theme.text }]}
+          />
+          {searchQuery ? (
+            <Pressable onPress={() => onSearchChange('')} hitSlop={8}>
+              <MaterialIcons name="close" size={18} color={theme.textSecondary} />
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -76,6 +79,9 @@ const styles = StyleSheet.create({
   container: {
     paddingHorizontal: Spacing.four,
     paddingTop: Spacing.three,
+    paddingBottom: Spacing.three,
+  },
+  containerCompact: {
     paddingBottom: Spacing.two,
   },
   titleRow: {
@@ -83,6 +89,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  titleRowCompact: {
+    marginBottom: 0,
   },
   brandTitle: {
     fontSize: 26,

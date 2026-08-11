@@ -38,30 +38,16 @@ export const Colors = {
 
 export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
+export const Fonts = {
+  sans: Platform.select({ web: 'var(--font-display)', default: 'Montserrat_400Regular' }),
+  medium: Platform.select({ web: 'var(--font-display)', default: 'Montserrat_500Medium' }),
+  semiBold: Platform.select({ web: 'var(--font-display)', default: 'Montserrat_600SemiBold' }),
+  bold: Platform.select({ web: 'var(--font-display)', default: 'Montserrat_700Bold' }),
+  extraBold: Platform.select({ web: 'var(--font-display)', default: 'Montserrat_800ExtraBold' }),
+  serif: Platform.select({ web: 'var(--font-serif)', ios: 'ui-serif', default: 'serif' }),
+  rounded: Platform.select({ web: 'var(--font-rounded)', ios: 'ui-rounded', default: 'normal' }),
+  mono: Platform.select({ web: 'var(--font-mono)', ios: 'ui-monospace', default: 'monospace' }),
+};
 
 export const Spacing = {
   half: 2,

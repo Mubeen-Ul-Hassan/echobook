@@ -1,46 +1,94 @@
-import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
-import { useTheme } from '@/hooks/use-theme';
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { MaterialIcons } from '@expo/vector-icons';
+import { StyleSheet, View } from 'react-native';
 
 interface LibraryStatsWidgetProps {
-  totalBooks: number;
-  inProgressCount: number;
+  totalBooks?: number;
+  inProgressCount?: number;
   completedCount: number;
+  totalListenedSeconds?: number;
+  streakDays?: number;
+}
+
+function formatListeningTime(seconds?: number): string {
+  if (!seconds || seconds <= 0) return '0m';
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) {
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  }
+  return `${mins}m`;
 }
 
 export function LibraryStatsWidget({
-  totalBooks,
-  inProgressCount,
   completedCount,
+  totalListenedSeconds = 0,
+  streakDays = 0,
 }: LibraryStatsWidgetProps) {
   const theme = useTheme();
 
   return (
     <View style={styles.container}>
-      <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-        <View style={styles.statItem}>
-          <MaterialIcons name="library-books" size={20} color={theme.accent} />
-          <ThemedText style={styles.statValue}>{totalBooks}</ThemedText>
-          <ThemedText themeColor="textSecondary" style={styles.statLabel}>Total</ThemedText>
+      <ThemedText style={styles.sectionTitle}>Your Insights</ThemedText>
+
+      <View style={styles.cardsRow}>
+        {/* Stat 1: Total Listened */}
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <MaterialIcons name="headphones" size={24} color="#53e2a7" style={styles.icon} />
+          <ThemedText style={styles.statValue} numberOfLines={1}>
+            {formatListeningTime(totalListenedSeconds)}
+          </ThemedText>
+          <ThemedText themeColor="textSecondary" style={styles.statLabel} numberOfLines={1}>
+            Total Listened
+          </ThemedText>
         </View>
 
-        <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-        <View style={styles.statItem}>
-          <MaterialIcons name="headphones" size={20} color="#64D2FF" />
-          <ThemedText style={styles.statValue}>{inProgressCount}</ThemedText>
-          <ThemedText themeColor="textSecondary" style={styles.statLabel}>In Progress</ThemedText>
+        {/* Stat 2: Current Streak */}
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <MaterialIcons name="local-fire-department" size={24} color="#ffbd78" style={styles.icon} />
+          <ThemedText style={styles.statValue} numberOfLines={1}>
+            {streakDays} {streakDays === 1 ? 'Day' : 'Days'}
+          </ThemedText>
+          <ThemedText themeColor="textSecondary" style={styles.statLabel} numberOfLines={1}>
+            Current Streak
+          </ThemedText>
         </View>
 
-        <View style={[styles.divider, { backgroundColor: theme.border }]} />
-
-        <View style={styles.statItem}>
-          <MaterialIcons name="check-circle-outline" size={20} color="#30D158" />
-          <ThemedText style={styles.statValue}>{completedCount}</ThemedText>
-          <ThemedText themeColor="textSecondary" style={styles.statLabel}>Completed</ThemedText>
+        {/* Stat 3: Finished Books */}
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: theme.backgroundElement,
+              borderColor: theme.border,
+            },
+          ]}
+        >
+          <MaterialIcons name="menu-book" size={24} color="#ffb86d" style={styles.icon} />
+          <ThemedText style={styles.statValue} numberOfLines={1}>
+            {completedCount} {completedCount === 1 ? 'Book' : 'Books'}
+          </ThemedText>
+          <ThemedText themeColor="textSecondary" style={styles.statLabel} numberOfLines={1}>
+            Finished
+          </ThemedText>
         </View>
       </View>
     </View>
@@ -50,30 +98,43 @@ export function LibraryStatsWidget({
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: Spacing.four,
-    marginBottom: Spacing.four,
+    marginBottom: Spacing.three,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  cardsRow: {
+    flexDirection: 'row',
+    gap: 12,
   },
   card: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    paddingVertical: 14,
+    flex: 1,
     borderRadius: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
     borderWidth: 1,
   },
-  statItem: {
-    alignItems: 'center',
+  icon: {
+    marginBottom: 4,
   },
   statValue: {
     fontSize: 16,
-    fontWeight: '800',
-    marginTop: 4,
+    fontWeight: '600',
+    marginTop: 2,
+    textAlign: 'center',
   },
   statLabel: {
-    fontSize: 11,
-    marginTop: 2,
-  },
-  divider: {
-    width: 1,
-    height: 28,
+    fontSize: 10,
+    fontWeight: '600',
+    marginTop: 4,
+    textAlign: 'center',
+    opacity: 0.8,
   },
 });
+
+
+

@@ -1,10 +1,9 @@
-import React from 'react';
-import { StyleSheet, View, Pressable } from 'react-native';
-import { Image } from 'expo-image';
-import { MaterialIcons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
-import { useTheme } from '@/hooks/use-theme';
 import { Spacing } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
+import { MaterialIcons } from '@expo/vector-icons';
+import { Image } from 'expo-image';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 interface ContinueListeningHeroProps {
   recentPlayback: {
@@ -86,7 +85,7 @@ export function ContinueListeningHero({ recentPlayback, onPlayRecent }: Continue
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: Spacing.four,
-    marginBottom: Spacing.four,
+    marginBottom: Spacing.three,
   },
   sectionHeader: {
     fontSize: 18,
