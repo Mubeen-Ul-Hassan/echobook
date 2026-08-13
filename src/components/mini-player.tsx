@@ -65,6 +65,7 @@ export function MiniPlayer() {
     pathname === '/index' ||
     pathname === '/library' ||
     pathname === '/profile' ||
+    pathname.startsWith('/book') ||
     pathname.startsWith('/(tabs)');
 
   // Height of bottom tab bar content (64) + safe area inset

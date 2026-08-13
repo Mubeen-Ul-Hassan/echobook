@@ -46,13 +46,6 @@ export default function RootLayout() {
                 <Stack screenOptions={{ headerShown: false }}>
                   <Stack.Screen name="(tabs)" />
                   <Stack.Screen
-                    name="book/[id]"
-                    options={{
-                      presentation: 'card',
-                      animation: 'slide_from_right',
-                    }}
-                  />
-                  <Stack.Screen
                     name="player"
                     options={{
                       presentation: 'modal',

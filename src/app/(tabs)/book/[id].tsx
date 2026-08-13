@@ -109,6 +109,16 @@ export default function BookDetailScreen() {
     return `${s}s`;
   };
 
+  const formatChapterDuration = (seconds: number) => {
+    const totalSec = Math.max(0, Math.floor(seconds));
+    const h = Math.floor(totalSec / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    const s = totalSec % 60;
+    if (h > 0) return s > 0 ? `${h}h ${m}min ${s}s` : `${h}h ${m}min`;
+    if (m > 0) return s > 0 ? `${m}min ${s}s` : `${m}min`;
+    return `${s}s`;
+  };
+
   const formatTimestamp = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
@@ -372,7 +382,7 @@ export default function BookDetailScreen() {
                       {chapter.title}
                     </ThemedText>
                     <ThemedText type="small" themeColor="textSecondary">
-                      {formatTimestamp(chapter.startTime)} · {formatDuration(chapter.duration)}
+                      {formatChapterDuration(chapter.duration || (chapter.endTime - chapter.startTime))}
                     </ThemedText>
                   </View>
                 </Pressable>
@@ -398,7 +408,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: Spacing.six,
+    paddingBottom: 160,
   },
   loadingContainer: {
     flex: 1,
