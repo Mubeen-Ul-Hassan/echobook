@@ -14,6 +14,7 @@ import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
+import { useThemeContext } from '@/context/theme-context';
 import { dbService } from '@/database/services';
 import { Spacing } from '@/constants/theme';
 function formatDuration(seconds: number): string {
@@ -26,6 +27,7 @@ function formatDuration(seconds: number): string {
 export default function ProfileScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
+  const { themeMode, colorScheme, setThemeMode, toggleDarkMode } = useThemeContext();
 
   const [stats, setStats] = useState({
     totalBooks: 0,
@@ -129,10 +131,79 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Playback Settings */}
+        {/* Playback Settings & Preferences */}
         <View style={styles.section}>
           <ThemedText style={styles.sectionTitle}>Preferences</ThemedText>
           <View style={[styles.card, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            {/* Dark Mode Theme Switch */}
+            <View style={styles.settingRow}>
+              <View style={styles.settingTextGroup}>
+                <View style={styles.settingTitleWithIcon}>
+                  <MaterialIcons
+                    name={colorScheme === 'dark' ? 'dark-mode' : 'light-mode'}
+                    size={20}
+                    color={theme.accent}
+                  />
+                  <ThemedText style={styles.settingLabel}>Dark Mode</ThemedText>
+                </View>
+                <ThemedText themeColor="textSecondary" style={styles.settingDesc}>
+                  {themeMode === 'system'
+                    ? `System preference (${colorScheme} active)`
+                    : `${themeMode.charAt(0).toUpperCase() + themeMode.slice(1)} mode active`}
+                </ThemedText>
+              </View>
+              <Switch
+                value={colorScheme === 'dark'}
+                onValueChange={toggleDarkMode}
+                trackColor={{ false: theme.border, true: theme.accent }}
+                thumbColor="#FFFFFF"
+              />
+            </View>
+
+            {/* Theme Mode Selector Buttons */}
+            <View style={[styles.segmentedContainer, { backgroundColor: theme.backgroundSelected }]}>
+              {(['system', 'light', 'dark'] as const).map((mode) => {
+                const isSelected = themeMode === mode;
+                const modeLabel = mode.charAt(0).toUpperCase() + mode.slice(1);
+
+                return (
+                  <Pressable
+                    key={mode}
+                    onPress={() => setThemeMode(mode)}
+                    style={[
+                      styles.segmentButton,
+                      isSelected && [styles.segmentButtonActive, { backgroundColor: theme.card }],
+                    ]}
+                  >
+                    {mode === 'system' ? (
+                      <MaterialCommunityIcons
+                        name="theme-light-dark"
+                        size={16}
+                        color={isSelected ? theme.accent : theme.textSecondary}
+                      />
+                    ) : (
+                      <MaterialIcons
+                        name={mode === 'light' ? 'light-mode' : 'dark-mode'}
+                        size={16}
+                        color={isSelected ? theme.accent : theme.textSecondary}
+                      />
+                    )}
+                    <ThemedText
+                      style={[
+                        styles.segmentText,
+                        { color: isSelected ? theme.text : theme.textSecondary },
+                        isSelected && styles.segmentTextActive,
+                      ]}
+                    >
+                      {modeLabel}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={[styles.rowDivider, { backgroundColor: theme.border }]} />
+
             <View style={styles.settingRow}>
               <View style={styles.settingTextGroup}>
                 <ThemedText style={styles.settingLabel}>Auto-play Next Chapter</ThemedText>
@@ -287,6 +358,42 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: 10,
   },
+  settingTitleWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  segmentedContainer: {
+    flexDirection: 'row',
+    borderRadius: 12,
+    padding: 4,
+    marginTop: Spacing.two,
+    marginBottom: Spacing.two,
+    gap: 4,
+  },
+  segmentButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  segmentButtonActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  segmentTextActive: {
+    fontWeight: '700',
+  },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -294,3 +401,4 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
 });
+
