@@ -44,7 +44,7 @@ export function LibraryStatsWidget({
             },
           ]}
         >
-          <MaterialIcons name="headphones" size={24} color="#53e2a7" style={styles.icon} />
+          <MaterialIcons name="headphones" size={28} color="#10B981" style={styles.icon} />
           <ThemedText style={styles.statValue} numberOfLines={1}>
             {formatListeningTime(totalListenedSeconds)}
           </ThemedText>
@@ -63,7 +63,7 @@ export function LibraryStatsWidget({
             },
           ]}
         >
-          <MaterialIcons name="local-fire-department" size={24} color="#ffbd78" style={styles.icon} />
+          <MaterialIcons name="local-fire-department" size={28} color="#FF5722" style={styles.icon} />
           <ThemedText style={styles.statValue} numberOfLines={1}>
             {streakDays} {streakDays === 1 ? 'Day' : 'Days'}
           </ThemedText>
@@ -82,7 +82,7 @@ export function LibraryStatsWidget({
             },
           ]}
         >
-          <MaterialIcons name="menu-book" size={24} color="#ffb86d" style={styles.icon} />
+          <MaterialIcons name="menu-book" size={28} color="#F7991C" style={styles.icon} />
           <ThemedText style={styles.statValue} numberOfLines={1}>
             {completedCount} {completedCount === 1 ? 'Book' : 'Books'}
           </ThemedText>
@@ -112,24 +112,23 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     borderRadius: 16,
-    paddingVertical: 12,
-    paddingHorizontal: 6,
+    paddingVertical: 16,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
   },
   icon: {
-    marginBottom: 4,
+    marginBottom: 8,
   },
   statValue: {
     fontSize: 16,
-    fontWeight: '600',
-    marginTop: 2,
+    fontWeight: '700',
     textAlign: 'center',
   },
   statLabel: {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '500',
     marginTop: 4,
     textAlign: 'center',
     opacity: 0.8,
