@@ -18,6 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { usePlayerContext } from '@/features/player/components/playback-provider';
 import { usePlaybackStore } from '@/hooks/use-playback-store';
+import { useSettingsStore } from '@/hooks/use-settings-store';
 import { useTheme } from '@/hooks/use-theme';
 import { navigateToPlayer } from '@/utils/navigation';
 
@@ -43,6 +44,7 @@ export function MiniPlayer() {
   const insets = useSafeAreaInsets();
   const { play, pause, skipBackward } = usePlayerContext();
 
+  const skipInterval = useSettingsStore((s) => s.skipInterval);
   const currentBook = usePlaybackStore((s) => s.currentBook);
   const currentChapter = usePlaybackStore((s) => s.currentChapter);
   const position = usePlaybackStore((s) => s.position);
@@ -124,18 +126,26 @@ export function MiniPlayer() {
 
         {/* Playback Controls: Fast Backward & Play/Pause (Identical proportions & size) */}
         <View style={styles.controlsRow}>
-          {/* Fast Backward (30s) */}
+          {/* Fast Backward */}
           <Pressable
-            onPress={() => skipBackward(30)}
+            onPress={() => skipBackward(skipInterval)}
             hitSlop={8}
             style={({ pressed }) => [
               styles.controlBtn,
               { backgroundColor: theme.backgroundSelected, opacity: pressed ? 0.8 : 1 },
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Fast backward 30 seconds"
+            accessibilityLabel={`Fast backward ${skipInterval} seconds`}
           >
-            <MaterialIcons name="replay-30" size={35} color={theme.text} />
+            {skipInterval === 10 ? (
+              <MaterialIcons name="replay-10" size={35} color={theme.text} />
+            ) : skipInterval === 30 ? (
+              <MaterialIcons name="replay-30" size={35} color={theme.text} />
+            ) : skipInterval === 5 ? (
+              <MaterialIcons name="replay-5" size={35} color={theme.text} />
+            ) : (
+              <MaterialIcons name="replay" size={30} color={theme.text} />
+            )}
           </Pressable>
 
           {/* Play / Pause Toggle */}

@@ -20,6 +20,7 @@ import { Text } from '@/components/ui/text';
 // Hooks & Navigation
 import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/hooks/use-playback-store';
+import { useSettingsStore } from '@/hooks/use-settings-store';
 import { usePlayerContext } from '@/features/player/components/playback-provider';
 import { safeGoBack } from '@/utils/navigation';
 import { AnimatedPlayButton } from '@/features/player/components/AnimatedPlayButton';
@@ -182,12 +183,14 @@ const PlayerControlsSection = React.memo(function PlayerControlsSection({
   onSkipForward,
   onPrevChapter,
   onNextChapter,
+  skipInterval,
 }: {
   onTogglePlayPause: () => void;
   onSkipBack: () => void;
   onSkipForward: () => void;
   onPrevChapter: () => void;
   onNextChapter: () => void;
+  skipInterval: number;
 }) {
   const theme = useTheme();
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
@@ -206,17 +209,25 @@ const PlayerControlsSection = React.memo(function PlayerControlsSection({
         <MaterialIcons name="skip-previous" size={28} color={theme.text} />
       </Button>
 
-      {/* Skip -15s Button */}
+      {/* Skip Back Button */}
       <Button
         variant="secondary"
         size="icon"
         onPress={onSkipBack}
-        accessibilityLabel="Skip backward 15 seconds"
+        accessibilityLabel={`Skip backward ${skipInterval} seconds`}
         accessibilityRole="button"
         style={styles.skipButton}
       >
         <View style={styles.skipInnerContainer}>
-          <MaterialIcons name="replay-10" size={24} color={theme.text} />
+          {skipInterval === 10 ? (
+            <MaterialIcons name="replay-10" size={24} color={theme.text} />
+          ) : skipInterval === 30 ? (
+            <MaterialIcons name="replay-30" size={24} color={theme.text} />
+          ) : skipInterval === 5 ? (
+            <MaterialIcons name="replay-5" size={24} color={theme.text} />
+          ) : (
+            <MaterialIcons name="replay" size={22} color={theme.text} />
+          )}
         </View>
       </Button>
 
@@ -229,17 +240,25 @@ const PlayerControlsSection = React.memo(function PlayerControlsSection({
         accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
       />
 
-      {/* Skip +15s Button */}
+      {/* Skip Forward Button */}
       <Button
         variant="secondary"
         size="icon"
         onPress={onSkipForward}
-        accessibilityLabel="Skip forward 15 seconds"
+        accessibilityLabel={`Skip forward ${skipInterval} seconds`}
         accessibilityRole="button"
         style={styles.skipButton}
       >
         <View style={styles.skipInnerContainer}>
-          <MaterialIcons name="forward-10" size={24} color={theme.text} />
+          {skipInterval === 10 ? (
+            <MaterialIcons name="forward-10" size={24} color={theme.text} />
+          ) : skipInterval === 30 ? (
+            <MaterialIcons name="forward-30" size={24} color={theme.text} />
+          ) : skipInterval === 5 ? (
+            <MaterialIcons name="forward-5" size={24} color={theme.text} />
+          ) : (
+            <MaterialIcons name="forward-10" size={24} color={theme.text} />
+          )}
         </View>
       </Button>
 
@@ -395,6 +414,9 @@ export function PlayerScreen({
   const router = useRouter();
   const theme = useTheme();
 
+  // Settings state from store
+  const skipInterval = useSettingsStore((s) => s.skipInterval);
+
   // Stable Zustand actions
   const startSleepTimer = usePlaybackStore((s) => s.startSleepTimer);
   const clearSleepTimer = usePlaybackStore((s) => s.clearSleepTimer);
@@ -426,23 +448,23 @@ export function PlayerScreen({
 
   const handleSkipBack = useCallback(() => {
     if (playerCtx) {
-      playerCtx.skipBackward(15);
+      playerCtx.skipBackward(skipInterval);
     } else {
       const position = usePlaybackStore.getState().position;
-      const newPos = Math.max(0, position - 15);
+      const newPos = Math.max(0, position - skipInterval);
       usePlaybackStore.getState().setPosition(newPos);
     }
-  }, [playerCtx]);
+  }, [playerCtx, skipInterval]);
 
   const handleSkipForward = useCallback(() => {
     if (playerCtx) {
-      playerCtx.skipForward(15);
+      playerCtx.skipForward(skipInterval);
     } else {
       const { position, duration } = usePlaybackStore.getState();
-      const newPos = Math.min(duration, position + 15);
+      const newPos = Math.min(duration, position + skipInterval);
       usePlaybackStore.getState().setPosition(newPos);
     }
-  }, [playerCtx]);
+  }, [playerCtx, skipInterval]);
 
   const handlePrevChapter = useCallback(() => {
     if (playerCtx) {
@@ -517,6 +539,7 @@ export function PlayerScreen({
               onSkipForward={handleSkipForward}
               onPrevChapter={handlePrevChapter}
               onNextChapter={handleNextChapter}
+              skipInterval={skipInterval}
             />
 
             {/* Toggles Toolbar (Playback Speed, Sleep Timer, Chapters & Bookmark) */}

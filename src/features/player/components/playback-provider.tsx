@@ -11,6 +11,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useAudioPlayerStatus } from 'expo-audio';
 
 import { usePlaybackStore } from '@/hooks/use-playback-store';
+import { useSettingsStore } from '@/hooks/use-settings-store';
 import { dbService } from '@/database/services';
 import { importService } from '@/features/import/services/import-service';
 import { AudiobookRecord, ChapterRecord } from '@/database/types';
@@ -497,10 +498,11 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   );
 
   const skipForward = useCallback(
-    async (seconds: number = 30): Promise<void> => {
+    async (seconds?: number): Promise<void> => {
+      const step = seconds ?? useSettingsStore.getState().skipInterval;
       const target = Math.min(
-        player.currentTime + seconds,
-        currentBook?.duration ?? player.currentTime + seconds,
+        player.currentTime + step,
+        currentBook?.duration ?? player.currentTime + step,
       );
       await seekTo(target);
     },
@@ -508,8 +510,9 @@ export function PlaybackProvider({ children }: { children: React.ReactNode }) {
   );
 
   const skipBackward = useCallback(
-    async (seconds: number = 30): Promise<void> => {
-      const target = Math.max(0, player.currentTime - seconds);
+    async (seconds?: number): Promise<void> => {
+      const step = seconds ?? useSettingsStore.getState().skipInterval;
+      const target = Math.max(0, player.currentTime - step);
       await seekTo(target);
     },
     [player, seekTo],
