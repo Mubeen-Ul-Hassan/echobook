@@ -1,29 +1,21 @@
-import { useFocusEffect, usePathname, useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useState } from 'react';
-import {
-  Alert,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  View,
-} from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { dbService } from '@/database/services';
-import { AudiobookRecord, PlaybackRecord } from '@/database/types';
-import { importService } from '@/features/import/services/import-service';
 import { usePlayerContext } from '@/features/player/components/playback-provider';
 import { usePlaybackStore } from '@/hooks/use-playback-store';
 import { useTheme } from '@/hooks/use-theme';
+import { useLibraryData } from '@/hooks/use-library-data';
 import { navigateToPlayer } from '@/utils/navigation';
 
 import { ImportProgressModal } from '@/features/import/components/ImportProgressModal';
 import { BookGridCard } from '@/features/library/components/BookGridCard';
 import { ContinueListeningHero } from '@/features/library/components/ContinueListeningHero';
-import { CategoryFilter, LibraryFilterBar, SortOption } from '@/features/library/components/LibraryFilterBar';
+import { LibraryFilterBar } from '@/features/library/components/LibraryFilterBar';
 import { LibraryHeader } from '@/features/library/components/LibraryHeader';
 import { LibraryStatsWidget } from '@/features/library/components/LibraryStatsWidget';
 
@@ -34,160 +26,23 @@ export default function HomeScreen() {
   const pathname = usePathname();
   const { startBook } = usePlayerContext();
 
-  const [books, setBooks] = useState<AudiobookRecord[]>([]);
-  const [playbacksMap, setPlaybacksMap] = useState<Record<string, PlaybackRecord>>({});
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isImporting, setIsImporting] = useState(false);
-  const [importStage, setImportStage] = useState('');
-  const [importPercent, setImportPercent] = useState<number | undefined>(undefined);
-  const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>('all');
-  const [sortBy, setSortBy] = useState<SortOption>('recent');
-
-  const [recentPlayback, setRecentPlayback] = useState<{
-    bookId: string;
-    title: string;
-    author: string | null;
-    coverPath: string | null;
-    duration: number;
-    position: number;
-  } | null>(null);
-
-  // Load books & playbacks from database
-  const loadBooks = useCallback(async () => {
-    try {
-      const allBooks = await dbService.getAudiobooks(db);
-      setBooks(allBooks);
-
-      const allPlaybacks = await dbService.getAllPlaybacks(db);
-      const pbMap: Record<string, PlaybackRecord> = {};
-      for (const pb of allPlaybacks) {
-        pbMap[pb.bookId] = pb;
-      }
-      setPlaybacksMap(pbMap);
-
-      const recents = await dbService.getRecentPlaybacks(db, 1);
-      if (recents.length > 0) {
-        const fullBook = await dbService.getAudiobookById(db, recents[0].bookId);
-        if (fullBook) {
-          setRecentPlayback({
-            bookId: fullBook.id,
-            title: fullBook.title,
-            author: fullBook.author,
-            coverPath: fullBook.coverPath,
-            duration: fullBook.duration,
-            position: recents[0].position,
-          });
-        }
-      } else {
-        setRecentPlayback(null);
-      }
-    } catch (error) {
-      console.error('[HomeScreen] Failed to load books:', error);
-    }
-  }, [db]);
-
-  useFocusEffect(
-    useCallback(() => {
-      loadBooks();
-    }, [loadBooks])
-  );
-
-  // Handle Import with progress callback
-  const handleImport = async () => {
-    if (Platform.OS === 'web') {
-      const message =
-        'Import does not work in the browser.\n\n' +
-        '1. In the terminal run: npx expo start\n' +
-        '2. Open Expo Go on your Android phone\n' +
-        '3. Scan the QR code\n' +
-        '4. Tap Import inside Expo Go';
-      if (typeof window !== 'undefined') {
-        window.alert(message);
-      } else {
-        Alert.alert('Use Expo Go on your phone', message);
-      }
-      return;
-    }
-
-    setIsImporting(true);
-    setImportStage('Initializing...');
-    setImportPercent(0);
-
-    try {
-      const imported = await importService.pickAndImportAudiobooks(db, (stage, percent) => {
-        setImportStage(stage);
-        setImportPercent(percent);
-      });
-
-      if (imported && imported.length > 0) {
-        await loadBooks();
-      }
-    } catch (err: any) {
-      console.error('[HomeScreen] Import failed:', err);
-      Alert.alert('Import Failed', err?.message || 'An unexpected error occurred during import.');
-    } finally {
-      setIsImporting(false);
-      setImportStage('');
-      setImportPercent(undefined);
-    }
-  };
-
-  // Filter & Sort books
-  const filteredBooks = books.filter((b) => {
-    const query = searchQuery.toLowerCase().trim();
-    if (query) {
-      const matchesTitle = b.title.toLowerCase().includes(query);
-      const matchesAuthor = b.author?.toLowerCase().includes(query);
-      const matchesGenre = b.genre?.toLowerCase().includes(query);
-      if (!matchesTitle && !matchesAuthor && !matchesGenre) return false;
-    }
-
-    const pb = playbacksMap[b.id];
-    const progress = pb && b.duration > 0 ? pb.position / b.duration : 0;
-    const isCompleted = pb?.completed === 1 || progress >= 0.99;
-
-    if (categoryFilter === 'in_progress') {
-      return progress > 0 && !isCompleted;
-    }
-    if (categoryFilter === 'completed') {
-      return isCompleted;
-    }
-    if (categoryFilter === 'sci_fi') {
-      const g = (b.genre || '').toLowerCase();
-      const t = b.title.toLowerCase();
-      return g.includes('sci') || g.includes('science') || t.includes('sci-fi') || t.includes('science fiction');
-    }
-    if (categoryFilter === 'classics') {
-      const g = (b.genre || '').toLowerCase();
-      const t = b.title.toLowerCase();
-      return g.includes('classic') || t.includes('classic');
-    }
-    if (categoryFilter === 'fiction') {
-      const g = (b.genre || '').toLowerCase();
-      return g.includes('fiction') && !g.includes('non-fiction') && !g.includes('nonfiction');
-    }
-    if (categoryFilter === 'non_fiction') {
-      const g = (b.genre || '').toLowerCase();
-      return g.includes('non-fiction') || g.includes('nonfiction');
-    }
-
-    return true;
-  });
-
-  const sortedBooks = [...filteredBooks].sort((a, b) => {
-    if (sortBy === 'title') {
-      return a.title.localeCompare(b.title);
-    }
-    if (sortBy === 'author') {
-      return (a.author || '').localeCompare(b.author || '');
-    }
-    if (sortBy === 'duration') {
-      return b.duration - a.duration;
-    }
-    const pbA = playbacksMap[a.id]?.lastPlayed || a.createdAt;
-    const pbB = playbacksMap[b.id]?.lastPlayed || b.createdAt;
-    return pbB.localeCompare(pbA);
-  });
+  const {
+    books,
+    playbacksMap,
+    recentPlayback,
+    searchQuery,
+    setSearchQuery,
+    categoryFilter,
+    setCategoryFilter,
+    isImporting,
+    importStage,
+    importPercent,
+    handleImport,
+    sortedBooks,
+    completedCount,
+    totalListenedSeconds,
+    streakDays,
+  } = useLibraryData();
 
   const handleOpenBook = (bookId: string) => {
     router.push(`/book/${bookId}`);
@@ -202,65 +57,6 @@ export default function HomeScreen() {
     await startBook(book, chapters, recentPlayback.position, true);
     navigateToPlayer(router, pathname);
   };
-
-  const completedCount = books.filter((b) => {
-    const pb = playbacksMap[b.id];
-    return pb?.completed === 1 || (pb && b.duration > 0 && pb.position / b.duration >= 0.99);
-  }).length;
-
-  const inProgressCount = books.filter((b) => {
-    const pb = playbacksMap[b.id];
-    const p = pb && b.duration > 0 ? pb.position / b.duration : 0;
-    return p > 0 && pb?.completed !== 1 && p < 0.99;
-  }).length;
-
-  const totalListenedSeconds = books.reduce((sum, book) => {
-    const pb = playbacksMap[book.id];
-    if (!pb) return sum;
-    if (pb.completed === 1 || (book.duration > 0 && pb.position / book.duration >= 0.99)) {
-      return sum + Math.max(pb.position || 0, book.duration || 0);
-    }
-    return sum + (pb.position || 0);
-  }, 0);
-
-  const streakDays = (() => {
-    const playbacks = Object.values(playbacksMap);
-    if (!playbacks.length) return 0;
-    const datesSet = new Set<string>();
-    for (const pb of playbacks) {
-      if (pb.lastPlayed) {
-        const dStr = new Date(pb.lastPlayed).toISOString().split('T')[0];
-        if (dStr) datesSet.add(dStr);
-      }
-    }
-    if (datesSet.size === 0) return 0;
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-    let streak = 0;
-    let checkDate: Date;
-    if (datesSet.has(todayStr)) {
-      checkDate = today;
-    } else if (datesSet.has(yesterdayStr)) {
-      checkDate = yesterday;
-    } else {
-      return 0;
-    }
-
-    while (true) {
-      const dStr = checkDate.toISOString().split('T')[0];
-      if (datesSet.has(dStr)) {
-        streak++;
-        checkDate.setDate(checkDate.getDate() - 1);
-      } else {
-        break;
-      }
-    }
-    return streak;
-  })();
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -285,7 +81,7 @@ export default function HomeScreen() {
           streakDays={streakDays}
         />
 
-        {/* Library Section Header, Search Bar & Short Filter Buttons */}
+        {/* Library Section Header, Search Bar & Category Filter Buttons */}
         <LibraryFilterBar
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -345,9 +141,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-  },
-  listContainer: {
-    gap: 8,
   },
   emptyBox: {
     alignItems: 'center',

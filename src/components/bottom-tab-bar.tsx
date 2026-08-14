@@ -10,7 +10,7 @@ export function BottomTabBar({ state, navigation }: any) {
   const insets = useSafeAreaInsets();
 
   const activeColor = theme.accent;
-  const inactiveColor = theme.text; // Black / Primary Text color instead of gray
+  const inactiveColor = theme.textSecondary;
 
   const tabs = [
     {
