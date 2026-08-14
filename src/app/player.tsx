@@ -1,54 +1,34 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { StyleSheet } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useRouter } from 'expo-router';
 
-import { useTheme } from '@/hooks/use-theme';
 import { usePlaybackStore } from '@/hooks/use-playback-store';
 import { usePlayerContext } from '@/features/player/components/playback-provider';
 import { dbService } from '@/database/services';
-import { BookmarkRecord, ChapterRecord } from '@/database/types';
+import { BookmarkRecord } from '@/database/types';
+import { safeGoBack } from '@/utils/navigation';
 
-import { PlayerHeader } from '@/features/player/components/PlayerHeader';
-import { PlayerCoverArt } from '@/features/player/components/PlayerCoverArt';
-import { PlayerSeekBar } from '@/features/player/components/PlayerSeekBar';
-import { PlayerControls } from '@/features/player/components/PlayerControls';
+import PlayerScreen from '@/features/player/components/PlayerScreen';
 import { SpeedSheet } from '@/features/player/components/SpeedSheet';
 import { SleepTimerSheet } from '@/features/player/components/SleepTimerSheet';
 import { ChapterSelectionSheet } from '@/features/player/components/ChapterSelectionSheet';
 import { BookmarkSheet } from '@/features/player/components/BookmarkSheet';
 import { DeviceSelectionSheet } from '@/features/player/components/DeviceSelectionSheet';
-import { safeGoBack } from '@/utils/navigation';
 
-export default function PlayerScreen() {
+export default function PlayerScreenRoute() {
   const router = useRouter();
-  const theme = useTheme();
   const db = useSQLiteContext();
   const insets = useSafeAreaInsets();
 
-  // Reactive state from Zustand store
+  // Reactive state from Zustand store (fine-grained selectors)
   const currentBook = usePlaybackStore((s) => s.currentBook);
   const currentChapter = usePlaybackStore((s) => s.currentChapter);
   const chapters = usePlaybackStore((s) => s.chapters);
-  const position = usePlaybackStore((s) => s.position);
-  const duration = usePlaybackStore((s) => s.duration);
-  const isPlaying = usePlaybackStore((s) => s.isPlaying);
-  const isLoaded = usePlaybackStore((s) => s.isLoaded);
   const speed = usePlaybackStore((s) => s.speed);
   const sleepTimerType = usePlaybackStore((s) => s.sleepTimerType);
   const sleepTimerDuration = usePlaybackStore((s) => s.sleepTimerDuration);
-  const sleepTimerRemaining = usePlaybackStore((s) => s.sleepTimerRemaining);
-
-  const formatSleepText = (secs: number | null): string | undefined => {
-    if (!secs || secs <= 0) return undefined;
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    if (m > 0) return `${m}m`;
-    return `${s}s`;
-  };
-
-  const sleepTimerRemainingText = sleepTimerType === 'chapter' ? 'End' : formatSleepText(sleepTimerRemaining);
 
   const startSleepTimer = usePlaybackStore((s) => s.startSleepTimer);
   const clearSleepTimer = usePlaybackStore((s) => s.clearSleepTimer);
@@ -60,16 +40,7 @@ export default function PlayerScreen() {
   }, [setIsPlayerVisible]);
 
   // Player action methods from Context
-  const {
-    togglePlayPause,
-    seekTo,
-    skipForward,
-    skipBackward,
-    nextChapter,
-    prevChapter,
-    jumpToChapter,
-    setSpeed,
-  } = usePlayerContext();
+  const { seekTo, jumpToChapter, setSpeed } = usePlayerContext();
 
   const [bookmarks, setBookmarks] = useState<BookmarkRecord[]>([]);
   const [showSpeedSheet, setShowSpeedSheet] = useState(false);
@@ -87,6 +58,7 @@ export default function PlayerScreen() {
   const handleAddBookmark = useCallback(
     async (note?: string) => {
       if (!currentBook) return;
+      const position = usePlaybackStore.getState().position;
       const newBm: BookmarkRecord = {
         id: 'bm_' + Date.now().toString(36),
         bookId: currentBook.id,
@@ -98,7 +70,7 @@ export default function PlayerScreen() {
       await dbService.insertBookmark(db, newBm);
       setBookmarks((prev) => [newBm, ...prev]);
     },
-    [db, currentBook, currentChapter, position]
+    [db, currentBook, currentChapter]
   );
 
   const handleDeleteBookmark = useCallback(
@@ -116,63 +88,19 @@ export default function PlayerScreen() {
     [seekTo]
   );
 
-  if (!currentBook) {
-    return (
-      <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-        <PlayerHeader
-          title="No Audiobook Selected"
-          onClose={() => safeGoBack(router)}
-          onOpenDeviceSheet={() => setShowDeviceSheet(true)}
-        />
-      </SafeAreaView>
-    );
-  }
+  // Position is read lazily for BookmarkSheet when opened
+  const currentPosition = usePlaybackStore((s) => s.position);
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Header */}
-      <PlayerHeader
-        title={currentBook.title}
-        chapterTitle={currentChapter?.title}
+    <View style={styles.container}>
+      <PlayerScreen
         onClose={() => safeGoBack(router)}
-        onOpenDeviceSheet={() => setShowDeviceSheet(true)}
-      />
-
-      {/* Cover Art */}
-      <PlayerCoverArt
-        coverPath={currentBook.coverPath}
-        title={currentBook.title}
-        isPlaying={isPlaying}
-      />
-
-      {/* Seek Bar */}
-      <PlayerSeekBar
-        position={position}
-        duration={duration}
-        currentChapter={currentChapter}
-        onSeek={seekTo}
-      />
-
-      {/* Main Controls */}
-      <PlayerControls
-        isPlaying={isPlaying}
-        isLoaded={isLoaded}
-        speed={speed}
-        hasSleepTimer={!!sleepTimerType}
-        sleepTimerRemainingText={sleepTimerRemainingText}
-        bookmarkCount={bookmarks.length}
-        onTogglePlayPause={togglePlayPause}
-        onSkipBack={() => skipBackward(30)}
-        onSkipForward={() => skipForward(30)}
-        onPrevChapter={prevChapter}
-        onNextChapter={nextChapter}
         onOpenSpeedSheet={() => setShowSpeedSheet(true)}
         onOpenSleepSheet={() => setShowSleepSheet(true)}
         onOpenChapterSheet={() => setShowChapterSheet(true)}
         onOpenBookmarkSheet={() => setShowBookmarkSheet(true)}
       />
 
-      {/* Bottom Sheets */}
       <SpeedSheet
         visible={showSpeedSheet}
         speed={speed}
@@ -203,7 +131,7 @@ export default function PlayerScreen() {
       <BookmarkSheet
         visible={showBookmarkSheet}
         bookmarks={bookmarks}
-        currentPosition={position}
+        currentPosition={currentPosition}
         onSelectBookmark={handleSelectBookmark}
         onAddBookmark={handleAddBookmark}
         onDeleteBookmark={handleDeleteBookmark}
@@ -216,13 +144,12 @@ export default function PlayerScreen() {
         onClose={() => setShowDeviceSheet(false)}
         bottomPadding={insets.bottom + 16}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: 'space-between',
   },
 });

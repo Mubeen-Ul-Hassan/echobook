@@ -1,8 +1,16 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StyleSheet, View, Pressable, ActivityIndicator } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withSequence,
+} from 'react-native-reanimated';
 import { MaterialIcons } from '@expo/vector-icons';
 import { ThemedText } from '@/components/themed-text';
 import { useTheme } from '@/hooks/use-theme';
+
+import { AnimatedPlayButton } from '@/features/player/components/AnimatedPlayButton';
 
 interface PlayerControlsProps {
   isPlaying: boolean;
@@ -63,25 +71,13 @@ export function PlayerControls({
           <MaterialIcons name="replay-30" size={32} color={theme.text} />
         </Pressable>
 
-        <Pressable
+        <AnimatedPlayButton
+          isPlaying={isPlaying}
+          isLoading={!isLoaded}
           onPress={onTogglePlayPause}
-          style={({ pressed }) => [
-            styles.playBtn,
-            { backgroundColor: theme.accent, opacity: pressed ? 0.85 : 1 },
-          ]}
-          accessibilityRole="button"
-          accessibilityLabel={isPlaying ? 'Pause' : 'Play'}
-        >
-          {!isLoaded ? (
-            <ActivityIndicator size="small" color="#000" />
-          ) : (
-            <MaterialIcons
-              name={isPlaying ? 'pause' : 'play-arrow'}
-              size={40}
-              color="#000"
-            />
-          )}
-        </Pressable>
+          size={72}
+          iconSize={40}
+        />
 
         <Pressable
           onPress={onSkipForward}
@@ -227,3 +223,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+
