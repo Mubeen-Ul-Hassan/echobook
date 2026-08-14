@@ -169,16 +169,6 @@ export default function BookDetailScreen() {
     navigateToPlayer(router, pathname);
   };
 
-  const handleStartOver = () => {
-    if (!book) return;
-    usePlaybackStore.getState().setIsPlayerVisible(true);
-    setCurrentBook(book);
-    setStoreChapters(chapters);
-    setCurrentChapter(chapters[0] || null);
-    setPosition(0);
-    navigateToPlayer(router, pathname);
-  };
-
   if (!book) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: theme.background }]}>
@@ -389,6 +379,43 @@ export default function BookDetailScreen() {
               ))}
             </View>
           )}
+
+          {activeTab === 'bookmarks' && (
+            <View style={styles.listContainer}>
+              {bookmarks.length === 0 ? (
+                <View style={styles.emptyBookmarksBox}>
+                  <ThemedText themeColor="textSecondary" style={{ textAlign: 'center' }}>
+                    No bookmarks saved yet for this audiobook.
+                  </ThemedText>
+                </View>
+              ) : (
+                bookmarks.map((bookmark) => (
+                  <Pressable
+                    key={bookmark.id}
+                    style={styles.chapterRow}
+                    onPress={() => {
+                      if (!book) return;
+                      usePlaybackStore.getState().setIsPlayerVisible(true);
+                      setCurrentBook(book);
+                      setStoreChapters(chapters);
+                      setPosition(bookmark.position);
+                      navigateToPlayer(router, pathname);
+                    }}
+                  >
+                    <MaterialIcons name="bookmark" size={20} color={theme.accent} />
+                    <View style={styles.chapterInfo}>
+                      <ThemedText style={styles.chapterTitle} numberOfLines={1}>
+                        {bookmark.note || formatTimestamp(bookmark.position)}
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {formatTimestamp(bookmark.position)}
+                      </ThemedText>
+                    </View>
+                  </Pressable>
+                ))
+              )}
+            </View>
+          )}
         </Animated.View>
       </ScrollView>
 
@@ -408,7 +435,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 160,
+    paddingBottom: 100,
   },
   loadingContainer: {
     flex: 1,
@@ -577,5 +604,10 @@ const styles = StyleSheet.create({
   chapterTitle: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  emptyBookmarksBox: {
+    paddingVertical: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

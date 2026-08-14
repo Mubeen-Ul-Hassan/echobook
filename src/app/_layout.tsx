@@ -27,6 +27,7 @@ function RootContent() {
           <PlaybackProvider>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
+              <Stack.Screen name="book/[id]" options={{ headerShown: false }} />
               <Stack.Screen
                 name="player"
                 options={{
