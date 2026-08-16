@@ -5,7 +5,6 @@ import { Text, TextProps } from '@/components/ui/text';
 
 export interface CardProps extends ViewProps {
   style?: StyleProp<ViewStyle>;
-  className?: string;
   children?: React.ReactNode;
 }
 

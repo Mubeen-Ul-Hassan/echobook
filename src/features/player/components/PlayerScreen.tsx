@@ -69,7 +69,7 @@ const PlayerHeaderSection = React.memo(function PlayerHeaderSection({
   const chapterText = usePlaybackStore((s) => s.currentChapter?.title || 'Chapter 1');
 
   return (
-    <View className="flex-row items-center justify-between px-4 py-3" style={styles.header}>
+    <View style={styles.header}>
       <Button
         variant="ghost"
         size="icon"
@@ -81,7 +81,7 @@ const PlayerHeaderSection = React.memo(function PlayerHeaderSection({
         <MaterialIcons name="keyboard-arrow-down" size={32} color={theme.text} />
       </Button>
 
-      <View className="flex-1 items-center mx-2" style={styles.headerTitleContainer}>
+      <View style={styles.headerTitleContainer}>
         <Text variant="h3" numberOfLines={1} align="center" style={styles.headerTitle}>
           {titleText}
         </Text>
@@ -110,7 +110,7 @@ const PlayerCoverArtSection = React.memo(function PlayerCoverArtSection() {
   const titleText = usePlaybackStore((s) => s.currentBook?.title || 'No Audiobook Selected');
 
   return (
-    <Card className="rounded-3xl overflow-hidden shadow-lg my-4 self-center" style={[styles.coverCard, { backgroundColor: theme.card }]}>
+    <Card style={[styles.coverCard, { backgroundColor: theme.card }]}>
       <CardContent style={styles.coverCardContent}>
         {coverPath ? (
           <Image
@@ -136,7 +136,7 @@ const PlayerMetadataSection = React.memo(function PlayerMetadataSection() {
   const authorText = usePlaybackStore((s) => s.currentBook?.author || 'Unknown Author');
 
   return (
-    <View className="w-full items-center my-3 px-2" style={styles.metadataContainer}>
+    <View style={styles.metadataContainer}>
       <Text variant="h1" weight="bold" numberOfLines={2} align="center" style={styles.bookTitleText}>
         {titleText}
       </Text>
@@ -157,7 +157,7 @@ const PlayerSliderSection = React.memo(function PlayerSliderSection({
   const duration = usePlaybackStore((s) => s.duration);
 
   return (
-    <View className="w-full my-3" style={styles.sliderContainer}>
+    <View style={styles.sliderContainer}>
       <Slider
         value={position}
         minimumValue={0}
@@ -165,7 +165,7 @@ const PlayerSliderSection = React.memo(function PlayerSliderSection({
         onSlidingComplete={onSeek}
         formatTime={formatTime}
       />
-      <View className="flex-row justify-between mt-1 px-1" style={styles.timeLabelsRow}>
+      <View style={styles.timeLabelsRow}>
         <Text variant="caption" color={theme.textSecondary} style={styles.timeText}>
           {formatTime(position)}
         </Text>
@@ -196,7 +196,7 @@ const PlayerControlsSection = React.memo(function PlayerControlsSection({
   const isPlaying = usePlaybackStore((s) => s.isPlaying);
 
   return (
-    <View className="flex-row items-center justify-center w-full my-4 gap-3" style={styles.controlsRow}>
+    <View style={styles.controlsRow}>
       {/* Prev Chapter Button */}
       <Button
         variant="ghost"
@@ -324,7 +324,7 @@ const PlayerTogglesSection = React.memo(function PlayerTogglesSection({
   }, [onOpenSleepSheet, onSleepTimerToggle]);
 
   return (
-    <View className="flex-row items-center justify-center w-full gap-3 mt-3 flex-wrap" style={styles.togglesRow}>
+    <View style={styles.togglesRow}>
       {/* Speed Toggle Chip */}
       <Toggle
         pressed={speed !== 1.0}
@@ -512,8 +512,8 @@ export function PlayerScreen({
 
   return (
     <PlayerPanGestureContainer onClose={handleClose}>
-      <SafeAreaView className="flex-1" style={[styles.safeArea, { backgroundColor: theme.background }]}>
-        <View className="flex-1" style={styles.container}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+        <View style={styles.container}>
           {/* Top Header */}
           <PlayerHeaderSection onClose={handleClose} onOpenChapterSheet={onOpenChapterSheet} />
 

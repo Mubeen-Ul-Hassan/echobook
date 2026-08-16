@@ -9,7 +9,6 @@ import {
 } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { Text } from '@/components/ui/text';
-import { cn } from '@/lib/utils';
 
 export type ButtonVariant = 'default' | 'secondary' | 'ghost' | 'icon' | 'outline';
 export type ButtonSize = 'sm' | 'md' | 'lg' | 'icon';
@@ -18,7 +17,6 @@ export interface ButtonProps extends Omit<PressableProps, 'style'> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   disabled?: boolean;
-  className?: string;
   style?: StyleProp<ViewStyle>;
   children?: React.ReactNode;
 }
@@ -27,7 +25,6 @@ export function Button({
   variant = 'default',
   size = 'md',
   disabled = false,
-  className,
   style,
   children,
   accessibilityRole = 'button',

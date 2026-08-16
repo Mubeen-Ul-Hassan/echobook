@@ -13,6 +13,9 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useFocusEffect } from 'expo-router';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
+
 import { useTheme } from '@/hooks/use-theme';
 import { useThemeContext } from '@/context/theme-context';
 import { useSettingsStore } from '@/hooks/use-settings-store';
@@ -116,21 +119,50 @@ export default function ProfileScreen() {
         {
           text: 'Clear Cache',
           style: 'destructive',
-          onPress: () => {
-            setCacheSizeMB(0);
-            Alert.alert('Cache Cleared', 'Audio cache cleared successfully.');
+          onPress: async () => {
+            try {
+              if (FileSystem.cacheDirectory) {
+                const files = await FileSystem.readDirectoryAsync(FileSystem.cacheDirectory);
+                for (const file of files) {
+                  await FileSystem.deleteAsync(FileSystem.cacheDirectory + file, { idempotent: true });
+                }
+              }
+              setCacheSizeMB(0);
+              Alert.alert('Cache Cleared', 'Audio cache cleared successfully.');
+            } catch (err) {
+              console.error('Failed to clear cache:', err);
+              setCacheSizeMB(0);
+              Alert.alert('Cache Cleared', 'Audio cache cleared successfully.');
+            }
           },
         },
       ]
     );
   }, [cacheSizeMB, setCacheSizeMB]);
 
-  const handleExportLibrary = useCallback(() => {
-    Alert.alert(
-      'Export Library Data',
-      `Exporting database backup containing ${stats.totalBooks} audiobooks and listening progress.`,
-      [{ text: 'OK' }]
-    );
+  const handleExportLibrary = useCallback(async () => {
+    try {
+      const dbPath = FileSystem.documentDirectory + 'SQLite/echobook.db';
+      const dbInfo = await FileSystem.getInfoAsync(dbPath);
+
+      if (!dbInfo.exists) {
+        Alert.alert('Export Notice', `Exporting database containing ${stats.totalBooks} audiobooks. No local file copy was found on this target device.`);
+        return;
+      }
+
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(dbPath, {
+          mimeType: 'application/x-sqlite3',
+          dialogTitle: 'Export Echobook Backup',
+          UTI: 'public.database',
+        });
+      } else {
+        Alert.alert('Sharing Unavailable', 'File sharing is not available on this platform/device.');
+      }
+    } catch (err: any) {
+      console.error('Failed to export database:', err);
+      Alert.alert('Export Error', err?.message || 'Failed to export library database.');
+    }
   }, [stats.totalBooks]);
 
   // Goal Progress (Target: 20 Hours per month)
@@ -282,7 +314,13 @@ export default function ProfileScreen() {
             <View style={[styles.rowDivider, { backgroundColor: theme.border }]} />
 
             {/* Skip Duration Interval */}
-            <Pressable style={styles.settingRow} onPress={() => setShowSkipModal(true)}>
+            <Pressable
+              style={styles.settingRow}
+              onPress={() => setShowSkipModal(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Skip duration: ${skipInterval} seconds`}
+              accessibilityHint="Opens picker to change seek skip interval"
+            >
               <View style={styles.settingTextGroup}>
                 <Text variant="body" weight="semiBold">
                   Skip Forward / Backward
@@ -302,7 +340,13 @@ export default function ProfileScreen() {
             <View style={[styles.rowDivider, { backgroundColor: theme.border }]} />
 
             {/* Default Playback Speed */}
-            <Pressable style={styles.settingRow} onPress={() => setShowSpeedModal(true)}>
+            <Pressable
+              style={styles.settingRow}
+              onPress={() => setShowSpeedModal(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Default playback speed: ${defaultSpeed} times`}
+              accessibilityHint="Opens picker to change default playback speed"
+            >
               <View style={styles.settingTextGroup}>
                 <Text variant="body" weight="semiBold">
                   Default Playback Speed
@@ -388,7 +432,13 @@ export default function ProfileScreen() {
             <View style={[styles.rowDivider, { backgroundColor: theme.border }]} />
 
             {/* Clear Cache Action */}
-            <Pressable style={styles.settingRow} onPress={handleClearCache}>
+            <Pressable
+              style={styles.settingRow}
+              onPress={handleClearCache}
+              accessibilityRole="button"
+              accessibilityLabel="Clear temporary audio cache"
+              accessibilityHint="Clears temporary cached audio files"
+            >
               <View style={styles.settingTextGroup}>
                 <Text variant="body" weight="semiBold">
                   Audio Temporary Cache
@@ -453,6 +503,9 @@ export default function ProfileScreen() {
                   <Pressable
                     key={mode}
                     onPress={() => setThemeMode(mode)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: isSelected }}
+                    accessibilityLabel={`${modeLabel} theme mode`}
                     style={[
                       styles.segmentButton,
                       isSelected && [styles.segmentButtonActive, { backgroundColor: theme.card }],
@@ -541,7 +594,13 @@ export default function ProfileScreen() {
             </View>
           </CardHeader>
           <CardContent style={styles.cardContentPadding}>
-            <Pressable style={styles.settingRow} onPress={handleExportLibrary}>
+            <Pressable
+              style={styles.settingRow}
+              onPress={handleExportLibrary}
+              accessibilityRole="button"
+              accessibilityLabel="Export library database backup"
+              accessibilityHint="Exports SQLite database backup file"
+            >
               <View style={styles.settingTextGroup}>
                 <Text variant="body" weight="semiBold">
                   Export Library Database

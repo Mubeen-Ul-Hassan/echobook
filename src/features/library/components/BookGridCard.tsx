@@ -25,9 +25,21 @@ export function BookGridCard({ book, playback, onPress }: BookGridCardProps) {
 
   const isCompleted = playback?.completed === 1 || progress >= 0.99;
 
+  const progressPercent = Math.round(progress * 100);
+  const authorText = book.author ? `by ${book.author}` : '';
+  const statusText = isCompleted
+    ? 'Completed'
+    : progress > 0
+    ? `${progressPercent}% completed`
+    : 'Not started';
+
+  const accessibilityLabel = `${book.title} ${authorText}. ${statusText}. Tap to view details.`;
+
   return (
     <Pressable
       onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       style={({ pressed }) => [
         styles.card,
         { opacity: pressed ? 0.85 : 1 },

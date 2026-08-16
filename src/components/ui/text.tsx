@@ -2,7 +2,6 @@ import React from 'react';
 import { Text as RNText, TextProps as RNTextProps, StyleSheet, TextStyle, StyleProp } from 'react-native';
 import { useTheme } from '@/hooks/use-theme';
 import { Fonts } from '@/constants/theme';
-import { cn } from '@/lib/utils';
 
 export type TextVariant = 'h1' | 'h2' | 'h3' | 'subhead' | 'body' | 'caption';
 
@@ -11,7 +10,6 @@ export interface TextProps extends RNTextProps {
   color?: string;
   align?: 'auto' | 'left' | 'right' | 'center' | 'justify';
   weight?: 'normal' | 'medium' | 'semiBold' | 'bold' | 'extraBold';
-  className?: string;
 }
 
 export function Text({
@@ -20,7 +18,6 @@ export function Text({
   align,
   weight,
   style,
-  className,
   children,
   ...props
 }: TextProps) {

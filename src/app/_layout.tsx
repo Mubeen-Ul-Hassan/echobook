@@ -16,6 +16,8 @@ import { useFonts } from 'expo-font';
 
 SplashScreen.preventAutoHideAsync();
 
+import { PlaybackErrorBanner } from '@/components/playback-error-banner';
+
 function RootContent() {
   const colorScheme = useColorScheme();
 
@@ -25,6 +27,7 @@ function RootContent() {
         <SQLiteProvider databaseName="echobook.db" onInit={migrateDbIfNeeded}>
           {/* PlaybackProvider must be inside SQLiteProvider so it can persist playback */}
           <PlaybackProvider>
+            <PlaybackErrorBanner />
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="book/[id]" options={{ headerShown: false }} />
